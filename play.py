@@ -6,18 +6,14 @@ Lancement :
     python play.py
 """
 import arcade
-from training.env.crossy_env import CrossyEnv, GRID_H, LOOK_BEHIND
-from training.env.lane import LaneType, GRID_W
+from training.env.crossy_env import CrossyEnv, GRID_H
+from training.env.lane import LaneType, GRID_W, MAX_SPEED
 
-CELL     = 64     # taille d'une cellule en pixels
-UI_H     = 52     # hauteur de la barre de score en bas
-WIN_W    = GRID_W * CELL          # 576 px
-WIN_H    = GRID_H * CELL          # 640 px
-OBS_TICK = 0.12   # secondes entre chaque avance des obstacles
-
-# --------------------------------------------------------------------------- #
-#  Palettes                                                                    #
-# --------------------------------------------------------------------------- #
+CELL           = 64
+UI_H           = 52
+WIN_W          = GRID_W * CELL
+WIN_H          = GRID_H * CELL
+CELLS_PER_SEC  = 3.0   # vitesse visuelle max (cases/seconde à speed normalisée = 1)
 
 _LANE_BG = {
     LaneType.SAFE:  (110, 200,  75),
@@ -27,14 +23,13 @@ _LANE_BG = {
     LaneType.LILY:  ( 25,  75, 165),
 }
 
-_OBS_COLOR = {
-    LaneType.ROAD:  (210,  50,  30),   # voiture  → rouge
-    LaneType.WATER: (139,  90,  40),   # bûche    → marron
-    LaneType.LILY:  ( 55, 175,  65),   # nénuphar → vert
-    LaneType.GRASS: ( 30,  90,  20),   # arbre    → vert foncé
+_KEY_TO_ACTION = {
+    arcade.key.UP:    1,
+    arcade.key.DOWN:  2,
+    arcade.key.LEFT:  3,
+    arcade.key.RIGHT: 4,
 }
 
-# --------------------------------------------------------------------------- #
 
 class CrossyGame(arcade.Window):
 
@@ -44,39 +39,62 @@ class CrossyGame(arcade.Window):
         self.env = CrossyEnv()
         self._reset()
 
-    # --- état ----------------------------------------------------------------
-
     def _reset(self):
         self.env.reset()
-        self._timer = 0.0
-        self._dead  = False
+        self._dead = False
 
-    # --- boucle principale ---------------------------------------------------
+    # --- boucle --------------------------------------------------------------
 
     def on_update(self, dt: float):
         if self._dead:
             return
-        self._timer += dt
-        if self._timer >= OBS_TICK:
-            self._timer = 0.0
-            self.env._update_obstacles()
-            if self.env._check_collision():
+
+        lane = self.env.lanes[self.env.player_row]
+
+        # 1. Vérifier si le joueur est sur une bûche AVANT que les obstacles bougent
+        on_log = (lane.lane_type == LaneType.WATER and
+                  lane.is_on_log(self.env.player_x))
+
+        # 2. Avancer les obstacles visuellement
+        for l in self.env.get_visible_lanes():
+            l.update_visual(dt, CELLS_PER_SEC)
+
+        # 3. Transporter le joueur avec la bûche (même delta que update_visual)
+        if on_log:
+            delta = (lane._speed / MAX_SPEED) * CELLS_PER_SEC * dt
+            self.env.player_x += delta
+            if not (0 <= self.env.player_x < GRID_W):
                 self._dead = True
+                return
+
+        # 4. Vérifier collision
+        self._check_collision()
+
+    # --- entrées -------------------------------------------------------------
 
     def on_key_press(self, key, mod):
-        if self._dead:
-            if key == arcade.key.R:
-                self._reset()
+        if key == arcade.key.R:
+            self._reset()
             return
-        action = {
-            arcade.key.UP:    1,
-            arcade.key.DOWN:  2,
-            arcade.key.LEFT:  3,
-            arcade.key.RIGHT: 4,
-        }.get(key)
+        if self._dead:
+            return
+        action = _KEY_TO_ACTION.get(key)
         if action is not None:
             self.env._apply_action(action)
-            if self.env._check_collision():
+            self._check_collision()
+
+    # --- collision -----------------------------------------------------------
+
+    def _check_collision(self):
+        lane = self.env.lanes[self.env.player_row]
+        if lane.lane_type == LaneType.ROAD:
+            if lane.overlaps_cell(int(self.env.player_x), hitbox=0.5):
+                self._dead = True
+        elif lane.lane_type == LaneType.LILY:
+            if not lane.has_obstacle_at(int(self.env.player_x)):
+                self._dead = True
+        elif lane.lane_type == LaneType.WATER:
+            if not lane.is_on_log(self.env.player_x):
                 self._dead = True
 
     # --- dessin --------------------------------------------------------------
@@ -85,16 +103,25 @@ class CrossyGame(arcade.Window):
         self.clear()
 
         visible = self.env.get_visible_lanes()
-        start   = max(0, self.env.player_row - LOOK_BEHIND)
 
         for i, lane in enumerate(visible):
             lane_y = UI_H + i * CELL
             self._draw_lane_bg(lane, lane_y)
-            for x in range(GRID_W):
-                if lane.has_obstacle_at(x):
-                    self._draw_obstacle(lane.lane_type, x, lane_y)
 
-        p_vis = self.env.player_row - start
+            if lane.lane_type == LaneType.GRASS:
+                for pos, _ in lane.iter_obstacles():
+                    self._draw_tree(pos, lane_y)
+            elif lane.lane_type == LaneType.ROAD:
+                for pos, width in lane.iter_obstacles():
+                    self._draw_car(pos, width, lane_y)
+            elif lane.lane_type == LaneType.WATER:
+                for pos, width in lane.iter_obstacles():
+                    self._draw_log(pos, width, lane_y)
+            elif lane.lane_type == LaneType.LILY:
+                for pos, _ in lane.iter_obstacles():
+                    self._draw_lily(pos, lane_y)
+
+        p_vis = self.env.player_row - self.env.camera_row
         self._draw_player(self.env.player_x, p_vis)
         self._draw_ui()
 
@@ -104,45 +131,71 @@ class CrossyGame(arcade.Window):
     # --- helpers de dessin ---------------------------------------------------
 
     def _draw_lane_bg(self, lane, y: int):
-        arcade.draw_rect_filled(arcade.XYWH(WIN_W / 2, y + CELL / 2, WIN_W, CELL), _LANE_BG[lane.lane_type])
+        arcade.draw_rect_filled(
+            arcade.XYWH(WIN_W / 2, y + CELL / 2, WIN_W, CELL),
+            _LANE_BG[lane.lane_type],
+        )
         arcade.draw_line(0, y, WIN_W, y, (0, 0, 0), 1)
         if lane.lane_type == LaneType.ROAD:
-            arcade.draw_line(0, y + CELL // 2, WIN_W, y + CELL // 2, (200, 180, 30), 1)
+            arcade.draw_line(0, y + CELL // 2, WIN_W, y + CELL // 2, (180, 160, 20), 1)
 
-    def _draw_obstacle(self, lt: LaneType, x: int, lane_y: int):
-        cx = x * CELL + CELL / 2
+    def _draw_tree(self, pos: float, lane_y: int):
+        cx = pos * CELL + CELL / 2
         cy = lane_y + CELL / 2
-        c  = _OBS_COLOR.get(lt, arcade.color.WHITE)
+        arcade.draw_rect_filled(arcade.XYWH(cx, cy - 8, 10, CELL // 2 - 4), (100, 60, 20))
+        arcade.draw_circle_filled(cx, cy + 8, 20, (30, 90, 20))
 
-        if lt == LaneType.ROAD:
-            arcade.draw_rect_filled(arcade.XYWH(cx, cy, CELL - 8, CELL - 22), c)
-            arcade.draw_rect_filled(arcade.XYWH(cx, cy + 4, CELL - 18, CELL - 36), (150, 200, 240))
+    def _draw_car(self, pos: float, width: int, lane_y: int):
+        px = pos * CELL
+        pw = width * CELL
+        cy = lane_y + CELL / 2
+        self._draw_car_segment(px, pw, cy)
+        if px + pw > WIN_W:
+            self._draw_car_segment(px - WIN_W, pw, cy)
 
-        elif lt == LaneType.WATER:
-            arcade.draw_rect_filled(arcade.XYWH(cx, cy, CELL - 4, CELL - 34), c)
+    def _draw_car_segment(self, px: float, pw: float, cy: float):
+        arcade.draw_rect_filled(
+            arcade.XYWH(px + pw / 2, cy, pw - 4, CELL - 20),
+            (210, 40, 40),
+        )
 
-        elif lt == LaneType.LILY:
-            arcade.draw_circle_filled(cx, cy, CELL // 2 - 10, c)
-            arcade.draw_circle_outline(cx, cy, CELL // 2 - 10, (30, 120, 40), 2)
+    def _draw_log(self, pos: float, width: int, lane_y: int):
+        px = pos * CELL
+        pw = width * CELL
+        cy = lane_y + CELL / 2
+        self._draw_log_segment(px, pw, cy)
+        if px + pw > WIN_W:
+            self._draw_log_segment(px - WIN_W, pw, cy)
 
-        elif lt == LaneType.GRASS:
-            arcade.draw_rect_filled(arcade.XYWH(cx, cy - 8, 10, CELL // 2 - 4), (100, 60, 20))
-            arcade.draw_circle_filled(cx, cy + 10, 18, c)
+    def _draw_log_segment(self, px: float, pw: float, cy: float):
+        arcade.draw_rect_filled(
+            arcade.XYWH(px + pw / 2, cy, pw - 4, CELL - 24),
+            (139, 90, 40),
+        )
 
-    def _draw_player(self, grid_x: int, vis_row: int):
-        cx = grid_x * CELL + CELL / 2
+    def _draw_lily(self, pos: float, lane_y: int):
+        cx = pos * CELL + CELL / 2
+        cy = lane_y + CELL / 2
+        arcade.draw_circle_filled(cx, cy, CELL // 2 - 8, (50, 160, 60))
+        arcade.draw_circle_outline(cx, cy, CELL // 2 - 8, (30, 110, 40), 3)
+
+    def _draw_player(self, player_x: float, vis_row: int):
+        # player_x est le centre du sprite en unités de case
+        cx = player_x * CELL
         cy = UI_H + vis_row * CELL + CELL / 2
-        r  = CELL // 2 - 10
+        r  = CELL // 4
         arcade.draw_circle_filled(cx, cy, r, (255, 230, 50))
         arcade.draw_circle_outline(cx, cy, r, (0, 0, 0), 2)
-        arcade.draw_circle_filled(cx - 7, cy + 5, 4, (30, 30, 30))
-        arcade.draw_circle_filled(cx + 7, cy + 5, 4, (30, 30, 30))
+        arcade.draw_circle_filled(cx - r // 3, cy + r // 4, r // 4, (30, 30, 30))
+        arcade.draw_circle_filled(cx + r // 3, cy + r // 4, r // 4, (30, 30, 30))
 
     def _draw_ui(self):
-        arcade.draw_rect_filled(arcade.XYWH(WIN_W / 2, UI_H / 2, WIN_W, UI_H), (25, 25, 25))
-        arcade.draw_text(f"Score : {self.env.score}", 14, 14, arcade.color.WHITE, 22, bold=True)
-        arcade.draw_text("↑ ↓ ← →  pour jouer",
-                         WIN_W - 10, 14, arcade.color.LIGHT_GRAY, 14, anchor_x="right")
+        arcade.draw_rect_filled(
+            arcade.XYWH(WIN_W / 2, UI_H / 2, WIN_W, UI_H),
+            (25, 25, 25),
+        )
+        arcade.draw_text(f"Score : {self.env.score}", 14, 14,
+                         arcade.color.WHITE, 22, bold=True)
 
     def _draw_gameover(self):
         cx, cy = WIN_W / 2, (WIN_H + UI_H) / 2
@@ -154,8 +207,6 @@ class CrossyGame(arcade.Window):
         arcade.draw_text("[ R ] pour rejouer", cx, cy - 60,
                          arcade.color.LIGHT_GRAY, 18, anchor_x="center")
 
-
-# --------------------------------------------------------------------------- #
 
 if __name__ == "__main__":
     game = CrossyGame()
