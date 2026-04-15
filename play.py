@@ -161,8 +161,6 @@ class CrossyGame(arcade.Window):
         pw = width * CELL
         cy = lane_y + CELL / 2
         self._draw_car_segment(px, pw, cy)
-        if px + pw > WIN_W:
-            self._draw_car_segment(px - WIN_W, pw, cy)
 
     def _draw_car_segment(self, px: float, pw: float, cy: float):
         arcade.draw_rect_filled(
@@ -175,8 +173,6 @@ class CrossyGame(arcade.Window):
         pw = width * CELL
         cy = lane_y + CELL / 2
         self._draw_log_segment(px, pw, cy)
-        if px + pw > WIN_W:
-            self._draw_log_segment(px - WIN_W, pw, cy)
 
     def _draw_log_segment(self, px: float, pw: float, cy: float):
         arcade.draw_rect_filled(

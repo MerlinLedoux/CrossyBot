@@ -122,7 +122,7 @@ class CrossyEnv(gym.Env):
         return section
 
     def _make_road_group(self, score: float, rng) -> list:
-        n     = CONFIG.road_riv_group_lines.sample(score, rng)
+        n = CONFIG.road_riv_group_lines.sample(score, rng)
         lanes = []
         for _ in range(n):
             speed_cps = float(CONFIG.car_speed.sample(score, rng))
@@ -262,10 +262,10 @@ class CrossyEnv(gym.Env):
             log = lane.get_log_at(self.player_x)
             if log is not None:
                 log_start, log_width = log
-                current_slot = int((self.player_x - log_start) % GRID_W)
+                current_slot = int(self.player_x - log_start)
                 new_slot     = current_slot + dx
                 if 0 <= new_slot < log_width:
-                    self.player_x = (log_start + new_slot + 0.5) % GRID_W
+                    self.player_x = log_start + new_slot + 0.5
                     return
                 # Slot hors bûche : pas de déplacement
 
@@ -288,9 +288,9 @@ class CrossyEnv(gym.Env):
                 log = target_lane.get_log_at(target_x)
                 if log is not None:
                     log_start, log_width = log
-                    slot     = int((target_x - log_start) % GRID_W)
+                    slot     = int(target_x - log_start)
                     slot     = max(0, min(log_width - 1, slot))
-                    target_x = (log_start + slot + 0.5) % GRID_W
+                    target_x = log_start + slot + 0.5
 
         self.player_x         = target_x
         self.player_row       = new_row

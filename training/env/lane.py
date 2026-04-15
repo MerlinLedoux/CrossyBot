@@ -1,5 +1,6 @@
 import numpy as np
 from enum import IntEnum
+from .generation_config import CONFIG
 
 GRID_W        = 13
 MAX_SPEED     = 0.5   # déplacement max en cellules/step (RL)
@@ -25,14 +26,18 @@ class Lane:
     speed_cps : vitesse signée en cases/seconde (visuel).
                 Positif = droite, négatif = gauche.
     score     : score courant du joueur.
+
+    WATER et ROAD utilisent un flux continu d'objets indépendants :
+    chaque objet a sa propre largeur (log_size / car_size) et chaque
+    espacement est tiré indépendamment (log_space / car_space).
+    Les objets entrent d'un côté de l'écran et sortent de l'autre
+    sans jamais se répéter.
     """
 
-    def __init__(self, lane_type: LaneType, speed_cps: float, rng: np.random.Generator, score: float = 0):
-        from .generation_config import CONFIG
-
+    def __init__(self, lane_type: LaneType, speed_cps: float,
+                 rng: np.random.Generator, score: float = 0):
         self.lane_type = lane_type
 
-        # Conversion cases/seconde → déplacement par step RL
         self._speed = float(np.clip(
             (speed_cps / CELLS_PER_SEC) * MAX_SPEED,
             -MAX_SPEED, MAX_SPEED,
@@ -59,55 +64,65 @@ class Lane:
                     self._positions.append(float(x))
                     self._widths.append(1)
 
-        # --- BÛCHES (largeur variable par bûche) ---
-        elif lane_type == LaneType.WATER:
-            min_gap = int(min(CONFIG.log_space._dist(score).keys()))
-            # Estimer n_logs depuis la largeur moyenne et le gap minimum
-            log_dist = CONFIG.log_size._dist(score)
-            avg_w    = sum(k * v for k, v in log_dist.items()) / sum(log_dist.values())
-            n_max    = max(1, int(GRID_W // (avg_w + max(min_gap, 1))))
-            n_logs   = int(rng.integers(1, n_max + 1))
-            # Echantillonner les largeurs, réduire si elles dépassent la grille
-            log_widths = [CONFIG.log_size.sample(score, rng) for _ in range(n_logs)]
-            while sum(log_widths) >= GRID_W and len(log_widths) > 1:
-                log_widths.pop()
-            n_logs = len(log_widths)
-            # Distribution des gaps : total = GRID_W - sum(widths), chaque gap >= min_gap
-            total_gap = float(GRID_W - sum(log_widths))
-            residual  = max(0.0, total_gap - n_logs * min_gap)
-            raw  = [float(CONFIG.log_space.sample(score, rng)) for _ in range(n_logs)]
-            s    = sum(raw) if sum(raw) > 0 else 1.0
-            gaps = [float(min_gap) + r / s * residual for r in raw]
-            # Placement avec offset circulaire entier
-            offset = int(rng.integers(0, GRID_W))
-            x = 0.0
-            for lw, g in zip(log_widths, gaps):
-                self._positions.append(float((x + offset) % GRID_W))
-                self._widths.append(lw)
-                x += lw + g
+        # --- BÛCHES et VOITURES : flux continu ---
+        elif lane_type in (LaneType.WATER, LaneType.ROAD):
+            self._rng   = rng
+            self._score = score
+            self._generate_stream()
 
-        # --- ROUTE (même largeur pour toutes les voitures de la ligne) ---
-        elif lane_type == LaneType.ROAD:
-            car_width = CONFIG.car_size.sample(score, rng)
-            min_gap   = int(min(CONFIG.car_space._dist(score).keys()))
-            # Nombre de voitures qui tiennent en circulaire avec gap minimum
-            n_max  = max(1, GRID_W // (car_width + max(min_gap, 1)))
-            n_cars = int(rng.integers(1, n_max + 1))
-            # Distribution des gaps : total = GRID_W - n*car_width, chaque gap >= min_gap
-            total_gap = float(GRID_W - n_cars * car_width)
-            residual  = max(0.0, total_gap - n_cars * min_gap)
-            raw  = [float(CONFIG.car_space.sample(score, rng)) for _ in range(n_cars)]
-            s    = sum(raw) if sum(raw) > 0 else 1.0
-            gaps = [float(min_gap) + r / s * residual for r in raw]
-            # Placement avec offset circulaire entier
-            offset = int(rng.integers(0, GRID_W))
-            x = 0.0
-            for g in gaps:
-                self._positions.append(float((x + offset) % GRID_W))
-                self._widths.append(car_width)
-                x += car_width + g
+    # --- génération du flux ---------------------------------------------------
 
-    # --- propriétés observation RL ----------------------------------------
+    def _sample_gap(self) -> float:
+        if self.lane_type == LaneType.WATER:
+            return float(CONFIG.log_space.sample(self._score, self._rng))
+        return float(CONFIG.car_space.sample(self._score, self._rng))
+
+    def _sample_width(self) -> int:
+        if self.lane_type == LaneType.WATER:
+            return CONFIG.log_size.sample(self._score, self._rng)
+        return CONFIG.car_size.sample(self._score, self._rng)
+
+    def _generate_stream(self) -> None:
+        """Remplit le flux initial : objets de -GRID_W à 2*GRID_W."""
+        x = -float(GRID_W) + self._sample_gap()
+        while x < 2 * GRID_W:
+            width = self._sample_width()
+            self._positions.append(float(x))
+            self._widths.append(width)
+            x += width + self._sample_gap()
+
+    def _trim_and_fill(self, moving_right: bool) -> None:
+        """Supprime les objets sortis de l'écran et génère les suivants
+        côté entrant pour maintenir un buffer hors-écran d'un GRID_W."""
+        if moving_right:
+            # sortis à droite
+            while self._positions and self._positions[-1] >= GRID_W:
+                self._positions.pop()
+                self._widths.pop()
+            # entrent par la gauche
+            while not self._positions or self._positions[0] > -GRID_W:
+                gap   = self._sample_gap()
+                width = self._sample_width()
+                left  = (self._positions[0] - gap - width) if self._positions \
+                        else -float(GRID_W)
+                self._positions.insert(0, float(left))
+                self._widths.insert(0, width)
+        else:
+            # sortis à gauche
+            while self._positions and self._positions[0] + self._widths[0] <= 0:
+                self._positions.pop(0)
+                self._widths.pop(0)
+            # entrent par la droite
+            while not self._positions or \
+                    self._positions[-1] + self._widths[-1] < 2 * GRID_W:
+                gap   = self._sample_gap()
+                width = self._sample_width()
+                right = (self._positions[-1] + self._widths[-1]) if self._positions \
+                        else float(GRID_W)
+                self._positions.append(float(right + gap))
+                self._widths.append(width)
+
+    # --- propriétés observation RL -------------------------------------------
 
     @property
     def type(self) -> float:
@@ -117,48 +132,29 @@ class Lane:
     def speed(self) -> float:
         return self._speed / MAX_SPEED
 
-    # --- tests de collision ------------------------------------------------
+    # --- tests de collision --------------------------------------------------
+    # Les positions sont désormais absolues (pas de % GRID_W).
+    # Un objet à pos avec largeur width occupe [pos, pos+width).
 
     def has_obstacle_at(self, x: int) -> bool:
         for pos, width in zip(self._positions, self._widths):
-            for i in range(width):
-                if int((pos + i) % GRID_W) == x:
-                    return True
+            if pos < x + 1 and pos + width > x:
+                return True
         return False
 
     def get_log_at(self, x_float: float):
-        """Retourne (log_start_effectif, width) du log sous le joueur, ou None."""
-        hb       = 0.25
-        hb_start = x_float - hb
-        hb_end   = x_float + hb
+        """Retourne (pos, width) du log sous le joueur, ou None."""
+        hb = 0.25
         for pos, width in zip(self._positions, self._widths):
-            start = pos % GRID_W
-            end   = start + width
-            if end <= GRID_W:
-                if start < hb_end and end > hb_start:
-                    return (start, width)
-            else:
-                if start < hb_end and GRID_W > hb_start:
-                    return (start, width)
-                if 0 < hb_end and end - GRID_W > hb_start:
-                    return (start - GRID_W, width)
+            if pos < x_float + hb and pos + width > x_float - hb:
+                return (pos, width)
         return None
 
     def is_on_log(self, x_float: float) -> bool:
-        hb       = 0.25
-        hb_start = x_float - hb
-        hb_end   = x_float + hb
+        hb = 0.25
         for pos, width in zip(self._positions, self._widths):
-            start = pos % GRID_W
-            end   = start + width
-            if end <= GRID_W:
-                if start < hb_end and end > hb_start:
-                    return True
-            else:
-                if start < hb_end and GRID_W > hb_start:
-                    return True
-                if 0 < hb_end and end - GRID_W > hb_start:
-                    return True
+            if pos < x_float + hb and pos + width > x_float - hb:
+                return True
         return False
 
     def overlaps_cell(self, x: int, hitbox: float = 0.5) -> bool:
@@ -166,33 +162,26 @@ class Lane:
         hb_start = x + margin
         hb_end   = x + 1.0 - margin
         for pos, width in zip(self._positions, self._widths):
-            start = pos % GRID_W
-            end   = start + width
-            if end <= GRID_W:
-                if start < hb_end and end > hb_start:
-                    return True
-            else:
-                if start < hb_end:
-                    return True
-                if end - GRID_W > hb_start:
-                    return True
+            if pos < hb_end and pos + width > hb_start:
+                return True
         return False
 
     def iter_obstacles(self):
         yield from zip(self._positions, self._widths)
 
-    # --- mise à jour des positions -----------------------------------------
+    # --- mise à jour des positions -------------------------------------------
 
     def update(self):
         """Avance les obstacles d'un step RL."""
-        self._positions = [(p + self._speed) % GRID_W for p in self._positions]
+        self._positions = [p + self._speed for p in self._positions]
+        if self.lane_type in (LaneType.WATER, LaneType.ROAD):
+            self._trim_and_fill(self._speed > 0)
 
     def update_visual(self, dt: float):
-        """Avance les obstacles en temps réel pour play.py.
-        Utilise directement _speed qui encode déjà le ratio cases/seconde."""
+        """Avance les obstacles en temps réel pour play.py."""
         if not self._positions or self._speed == 0.0:
             return
-        # _speed = (speed_cps / CELLS_PER_SEC) * MAX_SPEED
-        # → delta = (_speed / MAX_SPEED) * CELLS_PER_SEC * dt = speed_cps * dt
         delta = (self._speed / MAX_SPEED) * CELLS_PER_SEC * dt
-        self._positions = [(p + delta) % GRID_W for p in self._positions]
+        self._positions = [p + delta for p in self._positions]
+        if self.lane_type in (LaneType.WATER, LaneType.ROAD):
+            self._trim_and_fill(delta > 0)
