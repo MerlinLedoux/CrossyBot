@@ -1,7 +1,7 @@
 import numpy as np
 from enum import IntEnum
 
-GRID_W        = 9
+GRID_W        = 13
 MAX_SPEED     = 0.5   # déplacement max en cellules/step (RL)
 CELLS_PER_SEC = 3.0   # vitesse visuelle maximale en cases/seconde
 

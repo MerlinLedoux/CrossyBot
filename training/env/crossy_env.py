@@ -1,12 +1,17 @@
+from collections import deque
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from .lane import Lane, LaneType, GRID_W
 from .generation_config import CONFIG
 
-GRID_H      = 10
-LOOK_BEHIND = 1
-BUFFER_BEHIND = LOOK_BEHIND + 2   # lignes conservées derrière la caméra
+GRID_H       = 13   # lignes visibles : 2 derrière + joueur + 10 devant
+LOOK_BEHIND  = 2
+LOOK_AHEAD   = 10
+PLAYABLE_MIN = 2              # première colonne accessible au joueur
+PLAYABLE_MAX = GRID_W - 3     # dernière colonne accessible (= 10)
+MIN_LANES    = 16             # seuil déclenchant la génération d'un module
+MAX_LANES    = 25             # taille cible à l'initialisation
 
 _ACTION_DELTAS = {
     0: ( 0,  0),   # rester
@@ -22,7 +27,7 @@ class CrossyEnv(gym.Env):
         super().__init__()
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0,
-            shape=(GRID_H * (GRID_W + 2),),
+            shape=(GRID_H * (GRID_W + 2) + 2,),   # 13*15+2 = 197
             dtype=np.float32,
         )
         self.action_space = spaces.Discrete(5)
@@ -30,15 +35,16 @@ class CrossyEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        self.player_x         = float(GRID_W // 2) + 0.5
+        self.player_x         = float(GRID_W // 2) + 0.5   # centre = 6.5
         self.player_row       = 0
-        self.camera_row       = 0
+        self.deque_start_row  = 0
+        self.camera_start_row = 0   # ne recule jamais
         self.steps            = 0
         self.score            = 0
         self._last_was_unsafe = False
-        self._lane_offset     = 0      # nombre de lignes supprimées en bas du buffer
 
-        self.lanes = self._generate_lanes()
+        self.lanes = deque()
+        self._init_lanes()
 
         return self._get_observation(), {}
 
@@ -46,13 +52,19 @@ class CrossyEnv(gym.Env):
         self.steps += 1
 
         self._apply_action(action)
+        self._trim_lanes()
+        self._ensure_lanes()
         self._update_obstacles()
         self._carry_player()
 
-        self._trim_lanes()
-
         truncated = self.steps >= 2000
         return self._get_observation(), 0.0, False, truncated, {}
+
+    # --- propriété utilitaire ------------------------------------------------
+
+    @property
+    def player_lane(self) -> Lane:
+        return self.lanes[self.player_row - self.deque_start_row]
 
     # --- observation ---------------------------------------------------------
 
@@ -69,39 +81,47 @@ class CrossyEnv(gym.Env):
 
     # --- terrain -------------------------------------------------------------
 
-    def _generate_lanes(self) -> list:
-        lanes = [Lane(LaneType.SAFE, 0.0, self.np_random)]
-        while len(lanes) < GRID_H + 10:
-            lanes.extend(self._new_section())
-        return lanes
+    def _init_lanes(self) -> None:
+        """Remplit la deque jusqu'à MAX_LANES au démarrage."""
+        self.lanes.append(Lane(LaneType.SAFE, 0.0, self.np_random))
+        while len(self.lanes) < MAX_LANES:
+            for lane in self._new_section():
+                self.lanes.append(lane)
+        while len(self.lanes) > MAX_LANES:
+            self.lanes.pop()
 
     def _new_section(self) -> list:
-        rng     = self.np_random
-        s       = self.score
+        rng = self.np_random
+        s = self.score
         section = []
 
-        # herbe : toujours ajoutée, sauf si on enchaîne deux zones dangereuses ---
-        # unsafe_prob = probabilité de sauter le tampon d'herbe après une zone dangereuse
-        skip_grass = (self._last_was_unsafe
-                      and float(rng.random()) < CONFIG.unsafe_prob.at(s))
-        if not skip_grass:
-            n_grass     = CONFIG.grass_lines.sample(s, rng)
-            grass_lanes = [Lane(LaneType.GRASS, 0.0, rng, score=s)
-                           for _ in range(n_grass)]
-            self._validate_grass_group(grass_lanes, rng)
-            section.extend(grass_lanes)
+        if not self._last_was_unsafe :
+            if float(rng.random()) < 0.5:
+                section.extend(self._make_road_group(s, rng))
+            else:
+                section.extend(self._make_river_group(s, rng))
+            self._last_was_unsafe = True
 
-        # --- groupe route ou rivière (50/50) ---
-        if float(rng.random()) < 0.5:
-            section.extend(self._make_road_group(s, rng))
-        else:
-            section.extend(self._make_river_group(s, rng))
+        else :
+            skip_grass = (float(rng.random()) < CONFIG.unsafe_prob.at(s))
+            if not skip_grass:
+                n_grass     = CONFIG.grass_lines.sample(s, rng)
+                grass_lanes = [Lane(LaneType.GRASS, 0.0, rng, score=s) for _ in range(n_grass)]
+                self._validate_grass_group(grass_lanes, rng)
+                section.extend(grass_lanes)
+                self._last_was_unsafe = False
 
-        self._last_was_unsafe = True
+
+            else :
+                if float(rng.random()) < 0.5:
+                    section.extend(self._make_road_group(s, rng))
+                else:
+                    section.extend(self._make_river_group(s, rng))
+                self._last_was_unsafe = True
+
         return section
 
     def _make_road_group(self, score: float, rng) -> list:
-        """Groupe de lignes de route. Chaque ligne a sa propre vitesse et direction."""
         n     = CONFIG.road_riv_group_lines.sample(score, rng)
         lanes = []
         for _ in range(n):
@@ -111,9 +131,6 @@ class CrossyEnv(gym.Env):
         return lanes
 
     def _make_river_group(self, score: float, rng) -> list:
-        """Groupe de lignes de rivière (bûches ou nénuphars, choix par ligne).
-        Chaque ligne WATER a sa propre vitesse et direction.
-        Interdit : 3 lignes WATER consécutives dans la même direction."""
         n       = CONFIG.road_riv_group_lines.sample(score, rng)
         water_p = CONFIG.water_prob.at(score)
 
@@ -123,7 +140,6 @@ class CrossyEnv(gym.Env):
         for _ in range(n):
             if float(rng.random()) < water_p:
                 speed_cps = float(CONFIG.log_speed.sample(score, rng))
-                # Forcer un changement si les 2 dernières WATER étaient dans le même sens
                 if (len(last_water_dirs) >= 2
                         and last_water_dirs[-1] == last_water_dirs[-2]):
                     direction = -last_water_dirs[-1]
@@ -136,7 +152,6 @@ class CrossyEnv(gym.Env):
                 last_water_dirs = []
                 lanes.append(Lane(LaneType.LILY, 0.0, rng, score=score))
 
-        # Connectivité verticale entre lignes de nénuphars consécutives
         lily_run: list[Lane] = []
         for lane in lanes:
             if lane.lane_type == LaneType.LILY:
@@ -150,17 +165,17 @@ class CrossyEnv(gym.Env):
 
         return lanes
 
-    # --- validation herbe (BFS) ----------------------------------------------
+    # --- validation herbe (BFS sur colonnes jouables uniquement) -------------
 
     def _validate_grass_group(self, lanes: list, rng) -> None:
-        """Garantit un chemin libre de bas en haut dans le groupe d'herbe.
-        Si le BFS échoue, creuse une colonne aléatoire (jusqu'à 5 tentatives)."""
+        """Garantit un chemin libre dans la zone jouable (colonnes 2–10).
+        Si le BFS échoue, creuse une colonne aléatoire jouable (5 tentatives)."""
         if len(lanes) <= 1:
             return
         for _ in range(5):
             if self._bfs_grass(lanes):
                 return
-            col = int(rng.integers(0, GRID_W))
+            col = int(rng.integers(PLAYABLE_MIN, PLAYABLE_MAX + 1))
             for lane in lanes:
                 new_pos, new_wid = [], []
                 for p, w in zip(lane._positions, lane._widths):
@@ -170,9 +185,11 @@ class CrossyEnv(gym.Env):
                 lane._positions, lane._widths = new_pos, new_wid
 
     def _bfs_grass(self, lanes: list) -> bool:
-        """True s'il existe un chemin 4-connexe de la rangée 0 à la rangée n-1."""
+        """True s'il existe un chemin 4-connexe de la rangée 0 à n-1
+        en restant dans la zone jouable (colonnes PLAYABLE_MIN..PLAYABLE_MAX)."""
         n     = len(lanes)
-        queue = [(0, x) for x in range(GRID_W) if not lanes[0].has_obstacle_at(x)]
+        queue = [(0, x) for x in range(PLAYABLE_MIN, PLAYABLE_MAX + 1)
+                 if not lanes[0].has_obstacle_at(x)]
         if not queue:
             return False
         visited = set(queue)
@@ -182,43 +199,52 @@ class CrossyEnv(gym.Env):
                 return True
             for dr, dc in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
                 nr = row + dr
-                nc = (col + dc) % GRID_W        # wrap horizontal
+                nc = col + dc
+                if nc < PLAYABLE_MIN or nc > PLAYABLE_MAX:
+                    continue    # mur latéral
                 if 0 <= nr < n and (nr, nc) not in visited:
                     if not lanes[nr].has_obstacle_at(nc):
                         visited.add((nr, nc))
                         queue.append((nr, nc))
         return False
 
-    # --- validation nénuphars (connectivité verticale) -----------------------
+    # --- validation nénuphars (connectivité verticale, zone jouable) ---------
 
     def _validate_lily_connectivity(self, lily_lanes: list) -> None:
         """Pour chaque nénuphar de la ligne i, assure qu'il en existe un
-        accessible (±1 colonne) sur la ligne i+1."""
+        accessible (±1 colonne) sur la ligne i+1 dans la zone jouable."""
         for i in range(len(lily_lanes) - 1):
             a, b   = lily_lanes[i], lily_lanes[i + 1]
-            b_cols = {int(p) for p, _ in b.iter_obstacles()}
+            b_cols = {int(p) for p, _ in b.iter_obstacles()
+                      if PLAYABLE_MIN <= int(p) <= PLAYABLE_MAX}
             for pos, _ in a.iter_obstacles():
                 col = int(pos)
+                if col < PLAYABLE_MIN or col > PLAYABLE_MAX:
+                    continue
                 if not ({col - 1, col, col + 1} & b_cols):
-                    target = max(0, min(GRID_W - 1, col))
+                    target = max(PLAYABLE_MIN, min(PLAYABLE_MAX, col))
                     b._positions.append(float(target))
                     b._widths.append(1)
                     b_cols.add(target)
 
     def get_visible_lanes(self) -> list:
-        end = self.camera_row + GRID_H
-        while self._lane_offset + len(self.lanes) < end:
-            self.lanes.extend(self._new_section())
-        lo = self.camera_row - self._lane_offset
-        return self.lanes[lo: lo + GRID_H]
+        start_idx = self.camera_start_row - self.deque_start_row
+        lanes_list = list(self.lanes)
+        return lanes_list[start_idx: start_idx + GRID_H]
+
+    # --- buffer management ---------------------------------------------------
 
     def _trim_lanes(self) -> None:
-        """Supprime les lignes trop loin derrière la caméra."""
-        keep_from = max(0, self.camera_row - BUFFER_BEHIND)
-        n_drop    = keep_from - self._lane_offset
-        if n_drop > 0:
-            del self.lanes[:n_drop]
-            self._lane_offset += n_drop
+        """Supprime les lignes sorties derrière la caméra (qui ne recule jamais)."""
+        while self.deque_start_row < self.camera_start_row:
+            self.lanes.popleft()
+            self.deque_start_row += 1
+
+    def _ensure_lanes(self) -> None:
+        """Génère un nouveau module dès que la deque passe sous MIN_LANES."""
+        while len(self.lanes) < MIN_LANES:
+            for lane in self._new_section():
+                self.lanes.append(lane)
 
     # --- actions -------------------------------------------------------------
 
@@ -226,12 +252,12 @@ class CrossyEnv(gym.Env):
         dx, drow = _ACTION_DELTAS[action]
 
         if dx == 0 and drow == 0:
-            return   # rester : la bûche continue de porter le joueur
+            return
 
-        off  = self._lane_offset
+        off  = self.deque_start_row
         lane = self.lanes[self.player_row - off]
 
-        # Mouvement horizontal sur une bûche : grille de la bûche, pas du jeu
+        # Mouvement horizontal sur une bûche : grille relative à la bûche
         if dx != 0 and drow == 0 and lane.lane_type == LaneType.WATER:
             log = lane.get_log_at(self.player_x)
             if log is not None:
@@ -241,12 +267,12 @@ class CrossyEnv(gym.Env):
                 if 0 <= new_slot < log_width:
                     self.player_x = (log_start + new_slot + 0.5) % GRID_W
                     return
-                # Slot hors bûche : chute dans l'eau, pas de déplacement
+                # Slot hors bûche : pas de déplacement
 
-        # Mouvement normal sur la grille du jeu
+        # Mouvement normal sur la grille du jeu (limité à la zone jouable)
         current_cell_x = int(self.player_x)
-        new_cell_x     = max(0, min(GRID_W - 1, current_cell_x + dx))
-        new_row        = max(self.camera_row, self.player_row + drow)
+        new_cell_x     = max(PLAYABLE_MIN, min(PLAYABLE_MAX, current_cell_x + dx))
+        new_row        = max(self.camera_start_row, self.player_row + drow)
         new_idx        = new_row - off
 
         if new_idx < len(self.lanes):
@@ -254,7 +280,7 @@ class CrossyEnv(gym.Env):
             if target.lane_type == LaneType.GRASS and target.has_obstacle_at(new_cell_x):
                 return
 
-        # Snap au centre du slot cible (bûche) ou de la case cible
+        # Snap au centre du slot (bûche) ou de la case cible
         target_x = new_cell_x + 0.5
         if drow != 0 and new_idx < len(self.lanes):
             target_lane = self.lanes[new_idx]
@@ -266,21 +292,22 @@ class CrossyEnv(gym.Env):
                     slot     = max(0, min(log_width - 1, slot))
                     target_x = (log_start + slot + 0.5) % GRID_W
 
-        self.player_x   = target_x
-        self.player_row = new_row
-        self.score      = max(self.score, self.player_row)
-        self.camera_row = max(self.camera_row, self.player_row - LOOK_BEHIND)
+        self.player_x         = target_x
+        self.player_row       = new_row
+        self.score            = max(self.score, self.player_row)
+        self.camera_start_row = max(self.camera_start_row, self.player_row - LOOK_BEHIND)
 
     def _update_obstacles(self):
         """Met à jour uniquement les lignes visibles + marge devant."""
-        lo = max(0, self.camera_row - self._lane_offset)
-        hi = min(len(self.lanes), lo + GRID_H + 5)
-        for lane in self.lanes[lo:hi]:
-            lane.update()
+        player_idx = self.player_row - self.deque_start_row
+        lo = max(0, player_idx - LOOK_BEHIND)
+        hi = min(len(self.lanes), player_idx + LOOK_AHEAD + 5)
+        for i in range(lo, hi):
+            self.lanes[i].update()
 
     def _carry_player(self):
-        """Déplace le joueur avec la bûche sur laquelle il se trouve (entraînement RL)."""
-        lane = self.lanes[self.player_row - self._lane_offset]
+        """Déplace le joueur avec la bûche sur laquelle il se trouve."""
+        lane = self.lanes[self.player_row - self.deque_start_row]
         if lane.lane_type == LaneType.WATER and lane.is_on_log(self.player_x):
             self.player_x += lane._speed
             self.player_x = max(-0.5, min(GRID_W - 0.5, self.player_x))

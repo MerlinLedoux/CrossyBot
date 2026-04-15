@@ -6,7 +6,7 @@ Lancement :
     python play.py
 """
 import arcade
-from training.env.crossy_env import CrossyEnv, GRID_H
+from training.env.crossy_env import CrossyEnv, GRID_H, PLAYABLE_MIN
 from training.env.lane import LaneType, GRID_W, MAX_SPEED, CELLS_PER_SEC
 
 CELL  = 64
@@ -48,7 +48,7 @@ class CrossyGame(arcade.Window):
         if self._dead:
             return
 
-        lane = self.env.lanes[self.env.player_row]
+        lane = self.env.player_lane
 
         # 1. Vérifier si le joueur est sur une bûche AVANT que les obstacles bougent
         on_log = (lane.lane_type == LaneType.WATER and
@@ -68,6 +68,8 @@ class CrossyGame(arcade.Window):
 
         # 4. Vérifier collision
         self._check_collision()
+        self.env._trim_lanes()
+        self.env._ensure_lanes()
 
     # --- entrées -------------------------------------------------------------
 
@@ -80,12 +82,14 @@ class CrossyGame(arcade.Window):
         action = _KEY_TO_ACTION.get(key)
         if action is not None:
             self.env._apply_action(action)
+            self.env._trim_lanes()
+            self.env._ensure_lanes()
             self._check_collision()
 
     # --- collision -----------------------------------------------------------
 
     def _check_collision(self):
-        lane = self.env.lanes[self.env.player_row]
+        lane = self.env.player_lane
         if lane.lane_type == LaneType.ROAD:
             if lane.overlaps_cell(int(self.env.player_x), hitbox=0.5):
                 self._dead = True
@@ -120,7 +124,7 @@ class CrossyGame(arcade.Window):
                 for pos, _ in lane.iter_obstacles():
                     self._draw_lily(pos, lane_y)
 
-        p_vis = self.env.player_row - self.env.camera_row
+        p_vis = self.env.player_row - self.env.camera_start_row
         self._draw_player(self.env.player_x, p_vis)
         self._draw_ui()
 
@@ -137,6 +141,14 @@ class CrossyGame(arcade.Window):
         arcade.draw_line(0, y, WIN_W, y, (0, 0, 0), 1)
         if lane.lane_type == LaneType.ROAD:
             arcade.draw_line(0, y + CELL // 2, WIN_W, y + CELL // 2, (180, 160, 20), 1)
+        # Colonnes mur inaccessibles (légèrement assombries)
+        wall_w = PLAYABLE_MIN * CELL
+        arcade.draw_rect_filled(
+            arcade.XYWH(wall_w / 2, y + CELL / 2, wall_w, CELL), (0, 0, 0, 80),
+        )
+        arcade.draw_rect_filled(
+            arcade.XYWH(WIN_W - wall_w / 2, y + CELL / 2, wall_w, CELL), (0, 0, 0, 80),
+        )
 
     def _draw_tree(self, pos: float, lane_y: int):
         cx = pos * CELL + CELL / 2
