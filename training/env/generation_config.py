@@ -94,6 +94,7 @@ class WorldConfig:
     ))
 
     # Probabilité qu'aprés une section unsafe la section suivante soit unsafe
+    # Les section unsafe sont les section de route et d'eau a partir de 50 de score on peut avoir route puis eau puis route à nouveau.
     unsafe_prob: Prob = field(default_factory=lambda: Prob(
         (0, 50, 0.0),
         (50, 100, 0.25),

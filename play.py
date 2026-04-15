@@ -7,13 +7,12 @@ Lancement :
 """
 import arcade
 from training.env.crossy_env import CrossyEnv, GRID_H
-from training.env.lane import LaneType, GRID_W, MAX_SPEED
+from training.env.lane import LaneType, GRID_W, MAX_SPEED, CELLS_PER_SEC
 
-CELL           = 64
-UI_H           = 52
-WIN_W          = GRID_W * CELL
-WIN_H          = GRID_H * CELL
-CELLS_PER_SEC  = 3.0   # vitesse visuelle max (cases/seconde à speed normalisée = 1)
+CELL  = 64
+UI_H  = 52
+WIN_W = GRID_W * CELL
+WIN_H = GRID_H * CELL
 
 _LANE_BG = {
     LaneType.SAFE:  (110, 200,  75),
@@ -57,7 +56,7 @@ class CrossyGame(arcade.Window):
 
         # 2. Avancer les obstacles visuellement
         for l in self.env.get_visible_lanes():
-            l.update_visual(dt, CELLS_PER_SEC)
+            l.update_visual(dt)
 
         # 3. Transporter le joueur avec la bûche (même delta que update_visual)
         if on_log:
