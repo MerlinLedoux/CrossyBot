@@ -1,5 +1,7 @@
 """
-generation_config.py — Paramètres de génération procédurale de CrossyBot.
+generation_config.py — Paramètres de génération procédurale de CrossyBot. 
+La génération de l'environement est très importante pour reproduire le jeux.
+Si la vitesse/densité des vehicules et des buches n'est pas bonne la dinamique du jeu n'est pas reproduite. 
 
 Deux outils disponibles :
 
@@ -8,17 +10,12 @@ Deux outils disponibles :
       Les poids sont normalisés automatiquement (pas besoin qu'ils somment à 100).
       score_max = None signifie « jusqu'à l'infini ».
 
-  Range(rows...)  — plage continue uniforme par tranche de score.
-      Chaque ligne : (score_min, score_max, (min_val, max_val))
-      .sample(score, rng) retourne un float aléatoire dans la plage.
-
   Prob(rows...)   — probabilité scalaire (float entre 0 et 1) par tranche de score.
       Chaque ligne : (score_min, score_max, probabilite)
       .at(score) retourne simplement la probabilité correspondante.
 
 Exemples rapides :
     Table((0, 50, {1: 60, 2: 40}), (50, None, {1: 10, 2: 20, 3: 30, 4: 40}))
-    Range((0, 100, (0.3, 0.6)),    (100, None, (0.5, 1.0)))
     Prob ((0,  50, 0.45),          (50,  None, 0.55))
 """
 
@@ -59,32 +56,6 @@ class Table:
         return values[-1]
 
 
-class Range:
-    """Plage continue (min, max) avec échantillonnage uniforme, par tranche de score."""
-
-    def __init__(self, *rows):
-        """
-        rows : (score_min, score_max, (min_val, max_val))
-               score_max = None → jusqu'à l'infini
-        """
-        self._rows = rows
-
-    def _get(self, score: float) -> tuple:
-        for smin, smax, rng_vals in self._rows:
-            if smin <= score and (smax is None or score < smax):
-                return rng_vals
-        return self._rows[-1][2]
-
-    def sample(self, score: float, rng) -> float:
-        """Retourne un float aléatoire dans la plage correspondant au score."""
-        lo, hi = self._get(score)
-        return float(rng.uniform(lo, hi))
-
-    def at(self, score: float) -> tuple:
-        """Retourne la plage (min, max) sans tirer de valeur."""
-        return self._get(score)
-
-
 class Prob:
     """Probabilité scalaire fixe (float 0–1) par tranche de score."""
 
@@ -102,110 +73,101 @@ class Prob:
         return self._rows[-1][2]
 
 
-# ---------------------------------------------------------------------------
-# Configuration — modifiez uniquement ce bloc
-# ---------------------------------------------------------------------------
-
+# Configuration
 @dataclass
 class WorldConfig:
 
-    # =========================================================================
+    # ==================================================================================================================================================
     # STRUCTURE DES SECTIONS
-    # =========================================================================
 
-    # Nombre de lignes d'herbe entre deux groupes
+    # Taille des sections d'herbe
     grass_lines: Table = field(default_factory=lambda: Table(
-        (0, None, {1: 60, 2: 40}),
+        (0, None, {1: 40, 2: 30, 3: 20, 4: 10}),
     ))
 
-    # Nombre de lignes consécutives dans un groupe de ROUTE
-    road_group_lines: Table = field(default_factory=lambda: Table(
-        (  0,  50,  {1: 60, 2: 40}),
-        ( 50, 150,  {1: 20, 2: 30, 3: 30, 4: 20}),
-        (150, None, {1: 10, 2: 15, 3: 20, 4: 20, 5: 20, 6: 15}),
+    # Taille des sections de route et d'eau
+    road_riv_group_lines: Table = field(default_factory=lambda: Table(
+        (0, 50, {1: 20, 2: 40, 3: 20, 4: 20}),
+        (50, 100, {1: 10, 2: 15, 3: 25, 4: 25, 5: 15, 6: 10}),
+        (100, 200, {1: 5, 2: 10, 3: 15, 4: 20, 5: 20, 6: 15, 7: 10, 8: 5}),
+        (200, None, {3: 5, 4: 10, 5: 15, 6: 20, 7: 20, 8: 15, 9: 10, 10: 5}),
     ))
 
-    # Nombre de lignes consécutives dans un groupe de RIVIÈRE
-    river_group_lines: Table = field(default_factory=lambda: Table(
-        (  0,  50,  {1: 60, 2: 40}),
-        ( 50, 150,  {1: 20, 2: 30, 3: 30, 4: 20}),
-        (150, None, {1: 10, 2: 15, 3: 20, 4: 25, 5: 30}),
+    # Probabilité qu'aprés une section unsafe la section suivante soit unsafe
+    unsafe_prob: Prob = field(default_factory=lambda: Prob(
+        (0, 50, 0.0),
+        (50, 100, 0.25),
+        (100, 200, 0.50),
+        (200, None, 0.75),
     ))
 
-    # Probabilité que le prochain groupe soit une ROUTE (sinon rivière)
-    road_prob: Prob = field(default_factory=lambda: Prob(
-        (  0, 150, 0.45),
-        (150, None, 0.50),
-    ))
-
-    # =========================================================================
+    # ==================================================================================================================================================
     # ROUTE — voitures
-    # =========================================================================
-
-    # Vitesse des voitures (fraction de MAX_SPEED)
-    car_speed: Range = field(default_factory=lambda: Range(
-        (  0,  50,  (0.30, 0.55)),
-        ( 50, 150,  (0.35, 0.70)),
-        (150, 300,  (0.45, 0.85)),
-        (300, None, (0.55, 1.00)),
+    # Vitesse des voitures
+    car_speed: Table = field(default_factory=lambda: Table(
+        (0, 50, {0.25: 10, 0.50: 10, 0.75: 20, 1.00: 30, 1.25: 20, 1.50: 10}),
+        (50, 100, {0.25: 10, 0.50: 10, 0.75: 15, 1.00: 15, 1.25: 15, 1.50: 15, 1.75: 10, 2.00: 10}),
+        (100, 200, {0.25: 5, 0.50: 5, 0.75: 10, 1.00: 15, 1.25: 20, 1.50: 20, 1.75: 15, 2.00: 10}),
+        (200, None, {0.25: 5, 0.50: 5, 0.75: 5, 1.00: 10, 1.25: 15, 1.50: 20, 1.75: 25, 2.00: 15}),
     ))
 
-    # Nombre de voitures sur la ligne
-    car_count: Table = field(default_factory=lambda: Table(
-        (  0,  50,  {1: 50, 2: 35, 3: 15}),
-        ( 50, 150,  {1: 25, 2: 35, 3: 30, 4: 10}),
-        (150, None, {1: 10, 2: 25, 3: 35, 4: 30}),
+    # Taille des véhicules en fonction de la distance
+    car_size: Table = field(default_factory=lambda: Table(
+        (0, 100, {1: 15, 2: 70, 3: 15}),
+        (100, None, {1: 15, 2: 60, 3: 25}),
     ))
 
-    # Écart minimum garanti entre deux voitures (en cases)
-    car_min_gap: int = 2
+    # Distance entre deux véhicule en fonction de la distance
+    # Pour l'instant c'est indépendant de la vitesse il pourai peut être que dans le jeu d'origine les deux sont liée
+    car_space: Table = field(default_factory=lambda: Table(
+        (0, 50, {3: 10, 4: 20, 5: 30, 6: 25, 7: 10, 8: 5}),
+        (50, 100, {2: 5, 3: 10, 4: 20, 5: 30, 6: 20, 7: 10, 8: 5}),
+        (100, 200, {2: 5, 3: 15, 4: 30, 5: 25, 6: 20, 7: 5}),
+        (200, None, {2: 15, 3: 20, 4: 30, 5: 20, 6: 15}),
+    ))
 
-    # =========================================================================
+    # ==================================================================================================================================================
     # RIVIÈRE — composition de chaque ligne
-    # =========================================================================
-
     # Probabilité qu'une ligne de rivière soit des BÛCHES (sinon nénuphars)
     water_prob: Prob = field(default_factory=lambda: Prob(
-        (  0, 100, 0.60),
-        (100, None, 0.70),
+        (  0, None, 0.90),
     ))
 
-    # =========================================================================
+    # ==================================================================================================================================================
     # BÛCHES
-    # =========================================================================
-
-    # Vitesse des bûches (fraction de MAX_SPEED)
-    log_speed: Range = field(default_factory=lambda: Range(
-        (  0,  50,  (0.20, 0.45)),
-        ( 50, 150,  (0.25, 0.60)),
-        (150, 300,  (0.35, 0.75)),
-        (300, None, (0.45, 0.90)),
+    # Vitesse des bûches (Cases par seconde) (La speed est commune a toute la ligne)
+    log_speed: Table = field(default_factory=lambda: Table(
+        (0, 50, {0.25: 10, 0.50: 10, 0.75: 20, 1.00: 30, 1.25: 20, 1.50: 10}),
+        (50, 100, {0.25: 10, 0.50: 10, 0.75: 15, 1.00: 15, 1.25: 15, 1.50: 15, 1.75: 10, 2.00: 10}),
+        (100, 200, {0.25: 5, 0.50: 5, 0.75: 10, 1.00: 15, 1.25: 20, 1.50: 20, 1.75: 15, 2.00: 10}),
+        (200, None, {0.25: 5, 0.50: 5, 0.75: 5, 1.00: 10, 1.25: 15, 1.50: 20, 1.75: 25, 2.00: 15}),
     ))
 
-    # Largeur des bûches (en cases) — toutes les bûches d'une ligne ont la même largeur
-    log_width: Table = field(default_factory=lambda: Table(
-        (  0, 100, {2: 50, 3: 35, 4: 15}),
-        (100, None, {2: 30, 3: 40, 4: 30}),
+    # Ecart entre deux buche, je laisse la meme peut importe la distance car la diminution de la taille moyenne des buches avec la distance
+    # remplie déjà le rôle de diminuer la densité avec la distance
+    log_space: Table = field(default_factory=lambda: Table(
+        (  0, None, {0: 10, 1: 15, 2: 30, 3: 30, 4: 15}),
     ))
 
-    # Couverture minimale de la ligne par des bûches (fraction 0–1)
-    log_coverage_min: float = 0.40
+    # Taille des bûches (en cases) - Contrairement aux véhicule pour les route toutes les buches d'une ligne n'ont pas la même taille
+    log_size: Table = field(default_factory=lambda: Table(
+        (0, 100, {2: 70, 3: 15, 4: 15}),
+        (100, 200, {1: 10, 2: 40, 3: 30, 4: 20}),
+        (200, None, {1: 20, 2: 40, 3: 30, 4: 10}),
+    ))
 
-    # =========================================================================
+    # ==================================================================================================================================================
     # NÉNUPHARS
-    # =========================================================================
-
     # Nombre de nénuphars par ligne
     lily_count: Table = field(default_factory=lambda: Table(
-        (0, None, {2: 50, 3: 50}),
+        (0, None, {1: 10, 2: 40, 3: 30, 4: 20}),
     ))
 
-    # =========================================================================
+    # ==================================================================================================================================================
     # HERBE
-    # =========================================================================
-
-    # Probabilité d'arbre par case d'herbe
-    tree_probability: float = 0.25
-
+    # Nombre d'arbre par ligne
+    tree_count: Table = field(default_factory=lambda: Table(
+        (0, None, {0: 10, 1: 10, 2: 30, 3: 30, 4: 20}),
+    ))
 
 CONFIG = WorldConfig()
