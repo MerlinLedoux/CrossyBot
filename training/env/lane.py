@@ -3,8 +3,12 @@ from enum import IntEnum
 from .generation_config import CONFIG
 
 GRID_W        = 13
-MAX_SPEED     = 0.5   # déplacement max en cellules/step (RL)
+PLAYABLE_MIN  = 2              # première colonne accessible au joueur
+PLAYABLE_MAX  = GRID_W - 3     # dernière colonne accessible (= 10)
+PLAYABLE_W    = PLAYABLE_MAX - PLAYABLE_MIN + 1   # = 9 colonnes jouables
+STEPS_PER_SEC = 3.0   # fréquence d'action de l'agent (actions/seconde)
 CELLS_PER_SEC = 3.0   # vitesse visuelle maximale en cases/seconde
+MAX_SPEED     = CELLS_PER_SEC / STEPS_PER_SEC   # = 1.0 cellule/step
 
 class LaneType(IntEnum):
     SAFE  = 0
@@ -48,20 +52,20 @@ class Lane:
 
         # --- HERBE ---
         if lane_type == LaneType.GRASS:
-            n_trees = min(CONFIG.tree_count.sample(score, rng), GRID_W)
+            n_trees = min(CONFIG.tree_count.sample(score, rng), PLAYABLE_W)
             if n_trees > 0:
-                xs = sorted(rng.choice(GRID_W, size=n_trees, replace=False).tolist())
-                for x in xs:
-                    self._positions.append(float(x))
+                slots = sorted(rng.choice(PLAYABLE_W, size=n_trees, replace=False).tolist())
+                for s in slots:
+                    self._positions.append(float(PLAYABLE_MIN + s))
                     self._widths.append(1)
 
         # --- NÉNUPHARS ---
         elif lane_type == LaneType.LILY:
-            n_pads = min(CONFIG.lily_count.sample(score, rng), GRID_W)
+            n_pads = min(CONFIG.lily_count.sample(score, rng), PLAYABLE_W)
             if n_pads > 0:
-                xs = sorted(rng.choice(GRID_W, size=n_pads, replace=False).tolist())
-                for x in xs:
-                    self._positions.append(float(x))
+                slots = sorted(rng.choice(PLAYABLE_W, size=n_pads, replace=False).tolist())
+                for s in slots:
+                    self._positions.append(float(PLAYABLE_MIN + s))
                     self._widths.append(1)
 
         # --- BÛCHES et VOITURES : flux continu ---
@@ -141,6 +145,16 @@ class Lane:
             if pos < x + 1 and pos + width > x:
                 return True
         return False
+    
+    def obstacle_at(self, x: int) -> float:
+        """Retourne le taux d'occupation de la case x (0.0 à 1.0).
+        Plusieurs obstacles peuvent se cumuler (cap à 1.0)."""
+        coverage = 0.0
+        for pos, width in zip(self._positions, self._widths):
+            overlap = min(pos + width, x + 1) - max(pos, x)
+            if overlap > 0:
+                coverage += overlap
+        return min(coverage, 1.0)
 
     def get_log_at(self, x_float: float):
         """Retourne (pos, width) du log sous le joueur, ou None."""

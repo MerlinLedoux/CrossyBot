@@ -6,8 +6,8 @@ Lancement :
     python play.py
 """
 import arcade
-from training.env.crossy_env import CrossyEnv, GRID_H, PLAYABLE_MIN
-from training.env.lane import LaneType, GRID_W, MAX_SPEED, CELLS_PER_SEC
+from training.env.crossy_env import CrossyEnv, GRID_H
+from training.env.lane import LaneType, GRID_W, MAX_SPEED, CELLS_PER_SEC, PLAYABLE_MIN, PLAYABLE_MAX
 
 CELL  = 64
 UI_H  = 52
@@ -62,7 +62,7 @@ class CrossyGame(arcade.Window):
         if on_log:
             delta = (lane._speed / MAX_SPEED) * CELLS_PER_SEC * dt
             self.env.player_x += delta
-            if not (0 <= self.env.player_x < GRID_W):
+            if not (PLAYABLE_MIN <= self.env.player_x < PLAYABLE_MAX + 1):
                 self._dead = True
                 return
 
@@ -89,6 +89,10 @@ class CrossyGame(arcade.Window):
     # --- collision -----------------------------------------------------------
 
     def _check_collision(self):
+        # Colonnes mur (0, 1, 11, 12) : mort immédiate
+        if not (PLAYABLE_MIN <= self.env.player_x < PLAYABLE_MAX + 1):
+            self._dead = True
+            return
         lane = self.env.player_lane
         if lane.lane_type == LaneType.ROAD:
             if lane.overlaps_cell(int(self.env.player_x), hitbox=0.5):

@@ -2,14 +2,12 @@ from collections import deque
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from .lane import Lane, LaneType, GRID_W
+from .lane import Lane, LaneType, GRID_W, PLAYABLE_MIN, PLAYABLE_MAX
 from .generation_config import CONFIG
 
 GRID_H       = 13   # lignes visibles : 2 derrière + joueur + 10 devant
 LOOK_BEHIND  = 2
 LOOK_AHEAD   = 10
-PLAYABLE_MIN = 2              # première colonne accessible au joueur
-PLAYABLE_MAX = GRID_W - 3     # dernière colonne accessible (= 10)
 MIN_LANES    = 16             # seuil déclenchant la génération d'un module
 MAX_LANES    = 25             # taille cible à l'initialisation
 
@@ -27,7 +25,7 @@ class CrossyEnv(gym.Env):
         super().__init__()
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0,
-            shape=(GRID_H * (GRID_W + 2) + 2,),   # 13*15+2 = 197
+            shape=(GRID_H * (GRID_W + 2) + 2,),   # 13*(13+2)+2
             dtype=np.float32,
         )
         self.action_space = spaces.Discrete(5)
@@ -35,12 +33,14 @@ class CrossyEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        self.player_x         = float(GRID_W // 2) + 0.5   # centre = 6.5
-        self.player_row       = 0
-        self.deque_start_row  = 0
+        self.player_x = float(GRID_W // 2) + 0.5   # centre = 6.5
+        self.player_y = 2
+        self.player_row = 0
+        self.player_log_slot = None   # slot entier sur la bûche courante, None sinon
+        self.deque_start_row = 0
         self.camera_start_row = 0   # ne recule jamais
-        self.steps            = 0
-        self.score            = 0
+        self.steps = 0
+        self.score = 0
         self._last_was_unsafe = False
 
         self.lanes = deque()
@@ -50,15 +50,25 @@ class CrossyEnv(gym.Env):
 
     def step(self, action):
         self.steps += 1
+        prev_score = self.score
 
         self._apply_action(action)
         self._trim_lanes()
         self._ensure_lanes()
-        self._update_obstacles()
         self._carry_player()
+        self._update_obstacles()
 
-        truncated = self.steps >= 2000
-        return self._get_observation(), 0.0, False, truncated, {}
+        terminated = self._is_dead()
+        truncated  = self.steps >= 1000
+
+        if terminated:
+            reward = -10.0
+        elif self.score > prev_score:
+            reward = float(self.score - prev_score)
+        else:
+            reward = -0.1
+
+        return self._get_observation(), reward, terminated, truncated, {}
 
     # --- propriété utilitaire ------------------------------------------------
 
@@ -74,9 +84,10 @@ class CrossyEnv(gym.Env):
             obs.append(lane.type)
             obs.append(lane.speed)
             for x in range(GRID_W):
-                obs.append(1.0 if lane.has_obstacle_at(x) else 0.0)
+                obs.append(lane.obstacle_at(x))
         obs.append(self.player_x / GRID_W)
-        obs.append(min(self.score / 100, 1.0))
+        obs.append((self.player_row - self.camera_start_row) / GRID_H)
+        # obs.append(min(self.score / 100, 1.0))
         return np.array(obs, dtype=np.float32)
 
     # --- terrain -------------------------------------------------------------
@@ -211,8 +222,10 @@ class CrossyEnv(gym.Env):
     # --- validation nénuphars (connectivité verticale, zone jouable) ---------
 
     def _validate_lily_connectivity(self, lily_lanes: list) -> None:
-        """Pour chaque nénuphar de la ligne i, assure qu'il en existe un
-        accessible (±1 colonne) sur la ligne i+1 dans la zone jouable."""
+        """Pour chaque nénuphar à la colonne c de la ligne i, garantit
+        qu'il existe un nénuphar à la colonne c de la ligne i+1.
+        Le joueur ne pouvant avancer qu'en ligne droite, la correspondance
+        doit être exacte (pas ±1)."""
         for i in range(len(lily_lanes) - 1):
             a, b   = lily_lanes[i], lily_lanes[i + 1]
             b_cols = {int(p) for p, _ in b.iter_obstacles()
@@ -221,11 +234,10 @@ class CrossyEnv(gym.Env):
                 col = int(pos)
                 if col < PLAYABLE_MIN or col > PLAYABLE_MAX:
                     continue
-                if not ({col - 1, col, col + 1} & b_cols):
-                    target = max(PLAYABLE_MIN, min(PLAYABLE_MAX, col))
-                    b._positions.append(float(target))
+                if col not in b_cols:          # correspondance colonne exacte
+                    b._positions.append(float(col))
                     b._widths.append(1)
-                    b_cols.add(target)
+                    b_cols.add(col)
 
     def get_visible_lanes(self) -> list:
         start_idx = self.camera_start_row - self.deque_start_row
@@ -257,17 +269,33 @@ class CrossyEnv(gym.Env):
         off  = self.deque_start_row
         lane = self.lanes[self.player_row - off]
 
-        # Mouvement horizontal sur une bûche : grille relative à la bûche
+        # Mouvement horizontal sur une ligne d'eau : déplacement d'un slot entier.
+        # player_log_slot est l'entier exact, indépendant de la dérive du log.
         if dx != 0 and drow == 0 and lane.lane_type == LaneType.WATER:
-            log = lane.get_log_at(self.player_x)
-            if log is not None:
-                log_start, log_width = log
-                current_slot = int(self.player_x - log_start)
-                new_slot     = current_slot + dx
-                if 0 <= new_slot < log_width:
-                    self.player_x = log_start + new_slot + 0.5
-                    return
-                # Slot hors bûche : pas de déplacement
+            if self.player_log_slot is not None:
+                log = lane.get_log_at(self.player_x)
+                if log is not None:
+                    log_start, log_width = log
+                    new_slot = self.player_log_slot + dx
+                    new_x    = log_start + new_slot + 0.5
+                    if 0 <= new_slot < log_width:
+                        # Toujours sur le même log
+                        self.player_log_slot = new_slot
+                        self.player_x        = new_x
+                    else:
+                        # Hors du log courant : vérifier s'il y a un log adjacent
+                        adj_log = lane.get_log_at(new_x)
+                        if adj_log is not None:
+                            adj_start, adj_width = adj_log
+                            adj_slot             = max(0, min(adj_width - 1,
+                                                       int(new_x - adj_start)))
+                            self.player_log_slot = adj_slot
+                            self.player_x        = adj_start + adj_slot + 0.5
+                        else:
+                            # Pas de log : le joueur tombe à l'eau → mort
+                            self.player_x       = new_x
+                            self.player_log_slot = None
+            return   # pas de mouvement vertical sur l'eau
 
         # Mouvement normal sur la grille du jeu (limité à la zone jouable)
         current_cell_x = int(self.player_x)
@@ -281,19 +309,21 @@ class CrossyEnv(gym.Env):
                 return
 
         # Snap au centre du slot (bûche) ou de la case cible
-        target_x = new_cell_x + 0.5
+        target_x   = new_cell_x + 0.5
+        target_slot = None
         if drow != 0 and new_idx < len(self.lanes):
             target_lane = self.lanes[new_idx]
             if target_lane.lane_type == LaneType.WATER:
                 log = target_lane.get_log_at(target_x)
                 if log is not None:
                     log_start, log_width = log
-                    slot     = int(target_x - log_start)
-                    slot     = max(0, min(log_width - 1, slot))
-                    target_x = log_start + slot + 0.5
+                    slot        = max(0, min(log_width - 1, int(target_x - log_start)))
+                    target_slot = slot
+                    target_x    = log_start + slot + 0.5
 
         self.player_x         = target_x
         self.player_row       = new_row
+        self.player_log_slot  = target_slot
         self.score            = max(self.score, self.player_row)
         self.camera_start_row = max(self.camera_start_row, self.player_row - LOOK_BEHIND)
 
@@ -306,11 +336,34 @@ class CrossyEnv(gym.Env):
             self.lanes[i].update()
 
     def _carry_player(self):
-        """Déplace le joueur avec la bûche sur laquelle il se trouve."""
+        """Avance le joueur avec sa bûche en maintenant son slot exact.
+        Appelé AVANT _update_obstacles : le log est encore à sa position actuelle.
+        On prédit la position post-mouvement = log_start + speed + slot + 0.5."""
+        if self.player_log_slot is None:
+            return
         lane = self.lanes[self.player_row - self.deque_start_row]
-        if lane.lane_type == LaneType.WATER and lane.is_on_log(self.player_x):
-            self.player_x += lane._speed
-            self.player_x = max(-0.5, min(GRID_W - 0.5, self.player_x))
+        if lane.lane_type != LaneType.WATER:
+            return
+        log = lane.get_log_at(self.player_x)
+        if log is None:
+            return
+        log_start, _ = log
+        self.player_x = log_start + lane._speed + self.player_log_slot + 0.5
+        self.player_x = max(-0.5, min(GRID_W - 0.5, self.player_x))
+
+    # --- détection de mort ---------------------------------------------------
+
+    def _is_dead(self) -> bool:
+        if not (PLAYABLE_MIN <= self.player_x < PLAYABLE_MAX + 1):
+            return True
+        lane = self.player_lane
+        if lane.lane_type == LaneType.ROAD:
+            return lane.overlaps_cell(int(self.player_x), hitbox=0.5)
+        if lane.lane_type == LaneType.LILY:
+            return not lane.has_obstacle_at(int(self.player_x))
+        if lane.lane_type == LaneType.WATER:
+            return not lane.is_on_log(self.player_x)
+        return False
 
     # -------------------------------------------------------------------------
 
