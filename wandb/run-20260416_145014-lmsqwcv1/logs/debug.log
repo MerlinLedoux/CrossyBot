@@ -1,0 +1,25 @@
+2026-04-16 14:50:14,073 INFO    MainThread:356 [wandb_setup.py:_flush():81] Current SDK version is 0.26.0
+2026-04-16 14:50:14,073 INFO    MainThread:356 [wandb_setup.py:_flush():81] Configure stats pid to 356
+2026-04-16 14:50:14,073 INFO    MainThread:356 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-04-16 14:50:14,073 INFO    MainThread:356 [wandb_init.py:setup_run_log_directory():721] Logging user logs to C:\Users\ledou\Desktop\Devellopement\CrosyRoad\wandb\run-20260416_145014-lmsqwcv1\logs\debug.log
+2026-04-16 14:50:14,073 INFO    MainThread:356 [wandb_init.py:setup_run_log_directory():722] Logging internal logs to C:\Users\ledou\Desktop\Devellopement\CrosyRoad\wandb\run-20260416_145014-lmsqwcv1\logs\debug-internal.log
+2026-04-16 14:50:14,073 INFO    MainThread:356 [wandb_init.py:init():848] calling init triggers
+2026-04-16 14:50:14,073 INFO    MainThread:356 [wandb_init.py:init():853] wandb.init called with sweep_config: {}
+config: {'n_envs': 16, 'n_steps': 512, 'n_epochs': 4, 'batch_size': 256, 'lr': 0.0003, 'gamma': 0.99, 'gae_lambda': 0.95, 'clip_range': 0.2, 'vf_coef': 0.5, 'ent_coef': 0.01, 'max_grad_norm': 0.5, '_wandb': {}}
+2026-04-16 14:50:14,073 INFO    MainThread:356 [wandb_init.py:init():896] starting backend
+2026-04-16 14:50:16,372 INFO    MainThread:356 [wandb_init.py:init():911] sending inform_init request
+2026-04-16 14:50:16,389 INFO    MainThread:356 [wandb_init.py:init():919] backend started and connected
+2026-04-16 14:50:16,412 INFO    MainThread:356 [wandb_init.py:init():989] updated telemetry
+2026-04-16 14:50:16,451 INFO    MainThread:356 [wandb_init.py:init():1013] communicating run to backend with 90.0 second timeout
+2026-04-16 14:50:17,660 INFO    MainThread:356 [wandb_init.py:init():1058] starting run threads in backend
+2026-04-16 14:50:17,721 INFO    MainThread:356 [wandb_run.py:_console_start():2542] atexit reg
+2026-04-16 14:50:17,722 INFO    MainThread:356 [wandb_run.py:_redirect():2391] redirect: wrap_raw
+2026-04-16 14:50:17,723 INFO    MainThread:356 [wandb_run.py:_redirect():2460] Wrapping output streams.
+2026-04-16 14:50:17,723 INFO    MainThread:356 [wandb_run.py:_redirect():2483] Redirects installed.
+2026-04-16 14:50:17,726 INFO    MainThread:356 [wandb_init.py:init():1098] run started, returning control to user process
+2026-04-16 14:50:26,865 INFO    MainThread:356 [wandb_watch.py:_watch():69] Watching
+2026-04-16 15:43:31,322 INFO    MainThread:356 [wandb_run.py:_finish():2309] finishing run ledoux-merlin-myself/crossybot/lmsqwcv1
+2026-04-16 15:43:31,325 INFO    MainThread:356 [wandb_run.py:_atexit_cleanup():2508] got exitcode: 0
+2026-04-16 15:43:31,326 INFO    MainThread:356 [wandb_run.py:_restore():2490] restore
+2026-04-16 15:43:31,327 INFO    MainThread:356 [wandb_run.py:_restore():2496] restore done
+2026-04-16 15:43:35,086 INFO    MainThread:356 [wandb_run.py:_footer_sync_info():3886] logging synced files

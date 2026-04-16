@@ -19,6 +19,8 @@ def parse_args():
     p.add_argument("--batch",      type=int,   default=256,   help="Taille des mini-batchs")
     p.add_argument("--load",       type=str,   default=None,  help="Chemin d'un checkpoint à charger")
     p.add_argument("--save",       type=str,   default="training/models/crossybot.pt")
+    p.add_argument("--no-wandb",   action="store_true",      help="Désactive WandB")
+    p.add_argument("--run-name",   type=str,   default=None,  help="Nom de la run WandB")
     return p.parse_args()
 
 
@@ -26,12 +28,14 @@ def main():
     args = parse_args()
 
     trainer = Trainer(
-        n_envs        = args.envs,
-        n_steps       = args.steps,
-        n_epochs      = args.epochs,
-        batch_size    = args.batch,
-        lr            = args.lr,
-        save_path     = args.save,
+        n_envs         = args.envs,
+        n_steps        = args.steps,
+        n_epochs       = args.epochs,
+        batch_size     = args.batch,
+        lr             = args.lr,
+        save_path      = args.save,
+        use_wandb      = not args.no_wandb,
+        wandb_run_name = args.run_name,
     )
 
     if args.load:

@@ -1,3 +1,5 @@
 gymnasium==1.0.0
 numpy==2.0.2
+torch>=2.0.0
 arcade>=2.6.17
+wandb>=0.16.0

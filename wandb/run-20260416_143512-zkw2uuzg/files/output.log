@@ -1,0 +1,30 @@
+Démarrage entraînement — 1000 updates × 512 steps × 16 envs = 8,192,000 steps total
+
+Dashboard WandB : https://wandb.ai/ledouxmerlin-isima/crossybot/runs/zkw2uuzg
+Traceback (most recent call last):
+  File "C:\Users\ledou\Desktop\Devellopement\CrosyRoad\train.py", line 48, in <module>
+    main()
+  File "C:\Users\ledou\Desktop\Devellopement\CrosyRoad\train.py", line 44, in main
+    trainer.train(total_updates=args.updates)
+  File "C:\Users\ledou\Desktop\Devellopement\CrosyRoad\training\agent\trainer.py", line 200, in train
+    action, log_prob, value = self.network.act(obs)
+                              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ledou\miniconda3\envs\crossy\Lib\site-packages\torch\utils\_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ledou\Desktop\Devellopement\CrosyRoad\training\agent\network.py", line 145, in act
+    features  = self._encode(obs)
+                ^^^^^^^^^^^^^^^^^
+  File "C:\Users\ledou\Desktop\Devellopement\CrosyRoad\training\agent\network.py", line 126, in _encode
+    lane_embed  = self.lane_encoder(lanes)                             # (B, 13, 32)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ledou\miniconda3\envs\crossy\Lib\site-packages\torch\nn\modules\module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ledou\miniconda3\envs\crossy\Lib\site-packages\torch\nn\modules\module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ledou\Desktop\Devellopement\CrosyRoad\training\agent\network.py", line 54, in forward
+    out = self.net(x.view(batch * n_lanes, feat))       # (batch*N, embed)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: view size is not compatible with input tensor's size and stride (at least one dimension spans across two contiguous subspaces). Use .reshape(...) instead.

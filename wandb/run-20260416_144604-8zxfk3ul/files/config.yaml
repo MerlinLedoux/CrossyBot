@@ -1,0 +1,78 @@
+_wandb:
+    value:
+        cli_version: 0.26.0
+        e:
+            06dl9ik5qj8flsfy3dhxtyuxgvqgkhtf:
+                args:
+                    - --run-name
+                    - essai-lr-3e4
+                codePath: train.py
+                codePathLocal: train.py
+                cpu_count: 8
+                cpu_count_logical: 16
+                cudaVersion: "12.7"
+                disk:
+                    /:
+                        total: "999197839360"
+                        used: "723517796352"
+                email: ledoux.merlin@proton.me
+                executable: C:\Users\ledou\miniconda3\envs\crossy\python.exe
+                git:
+                    commit: 337c72659a1903658e8eb1eeefb9d43eeb9d78f2
+                    remote: https://github.com/MerlinLedoux/CrossyBot.git
+                gpu: NVIDIA GeForce RTX 3070 Ti Laptop GPU
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ampere
+                      cudaCores: 5888
+                      memoryTotal: "8589934592"
+                      name: NVIDIA GeForce RTX 3070 Ti Laptop GPU
+                      uuid: GPU-7fd3ccbe-dcc8-dfd3-435f-2e4373dbaf85
+                host: Hyperbole
+                memory:
+                    total: "16366280704"
+                os: Windows-10-10.0.26200-SP0
+                program: C:\Users\ledou\Desktop\Devellopement\CrosyRoad\train.py
+                python: CPython 3.11.15
+                root: C:\Users\ledou\Desktop\Devellopement\CrosyRoad
+                startedAt: "2026-04-16T12:46:04.529766Z"
+                writerId: 06dl9ik5qj8flsfy3dhxtyuxgvqgkhtf
+        m: []
+        python_version: 3.11.15
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 1
+                - 13
+                - 16
+            "4": 3.11.15
+            "5": 0.26.0
+            "8":
+                - 3
+            "12": 0.26.0
+            "13": windows-amd64
+batch_size:
+    value: 256
+clip_range:
+    value: 0.2
+ent_coef:
+    value: 0.01
+gae_lambda:
+    value: 0.95
+gamma:
+    value: 0.99
+lr:
+    value: 0.0003
+max_grad_norm:
+    value: 0.5
+n_envs:
+    value: 16
+n_epochs:
+    value: 4
+n_steps:
+    value: 512
+vf_coef:
+    value: 0.5

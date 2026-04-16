@@ -51,8 +51,8 @@ class LaneEncoder(nn.Module):
         # x : (batch, N_LANES, LANE_FEAT)
         # on applique le MLP à chaque lane indépendamment
         batch, n_lanes, feat = x.shape
-        out = self.net(x.view(batch * n_lanes, feat))       # (batch*N, embed)
-        return out.view(batch, n_lanes, -1)                  # (batch, N, embed)
+        out = self.net(x.reshape(batch * n_lanes, feat))     # (batch*N, embed)
+        return out.reshape(batch, n_lanes, -1)               # (batch, N, embed)
 
 
 class SpatialConv(nn.Module):

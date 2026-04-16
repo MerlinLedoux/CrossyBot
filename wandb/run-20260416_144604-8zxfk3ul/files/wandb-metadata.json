@@ -1,0 +1,44 @@
+{
+  "os":  "Windows-10-10.0.26200-SP0",
+  "python":  "CPython 3.11.15",
+  "startedAt":  "2026-04-16T12:46:04.529766Z",
+  "args":  [
+    "--run-name",
+    "essai-lr-3e4"
+  ],
+  "program":  "C:\\Users\\ledou\\Desktop\\Devellopement\\CrosyRoad\\train.py",
+  "codePath":  "train.py",
+  "codePathLocal":  "train.py",
+  "git":  {
+    "remote":  "https://github.com/MerlinLedoux/CrossyBot.git",
+    "commit":  "337c72659a1903658e8eb1eeefb9d43eeb9d78f2"
+  },
+  "email":  "ledoux.merlin@proton.me",
+  "root":  "C:\\Users\\ledou\\Desktop\\Devellopement\\CrosyRoad",
+  "host":  "Hyperbole",
+  "executable":  "C:\\Users\\ledou\\miniconda3\\envs\\crossy\\python.exe",
+  "cpu_count":  8,
+  "cpu_count_logical":  16,
+  "gpu":  "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "999197839360",
+      "used":  "723517796352"
+    }
+  },
+  "memory":  {
+    "total":  "16366280704"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+      "memoryTotal":  "8589934592",
+      "cudaCores":  5888,
+      "architecture":  "Ampere",
+      "uuid":  "GPU-7fd3ccbe-dcc8-dfd3-435f-2e4373dbaf85"
+    }
+  ],
+  "cudaVersion":  "12.7",
+  "writerId":  "06dl9ik5qj8flsfy3dhxtyuxgvqgkhtf"
+}
