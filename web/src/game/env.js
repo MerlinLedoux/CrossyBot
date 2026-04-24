@@ -267,7 +267,7 @@ export class CrossyEnv {
   isDead() {
     if (!(this.playerX >= PLAYABLE_MIN && this.playerX < PLAYABLE_MAX + 1)) return true;
     const lane = this.playerLane;
-    if (lane.laneType === LaneType.ROAD)  return lane.overlapsCell(Math.floor(this.playerX), 0.5);
+    if (lane.laneType === LaneType.ROAD)  return lane.overlapsPosition(this.playerX, 0.3);
     if (lane.laneType === LaneType.LILY)  return !lane.hasObstacleAt(Math.floor(this.playerX));
     if (lane.laneType === LaneType.WATER) return !lane.isOnLog(this.playerX);
     return false;

@@ -24,7 +24,7 @@ async function main() {
   function checkCollision() {
     if (!(env.playerX >= PLAYABLE_MIN && env.playerX < PLAYABLE_MAX + 1)) return true;
     const lane = env.playerLane;
-    if (lane.laneType === LaneType.ROAD  && lane.overlapsCell(Math.floor(env.playerX), 0.5)) return true;
+    if (lane.laneType === LaneType.ROAD  && lane.overlapsPosition(env.playerX, 0.1)) return true;
     if (lane.laneType === LaneType.LILY  && !lane.hasObstacleAt(Math.floor(env.playerX)))    return true;
     if (lane.laneType === LaneType.WATER && !lane.isOnLog(env.playerX))                      return true;
     return false;
@@ -57,6 +57,9 @@ async function main() {
     env._trimLanes();
     env._ensureLanes();
     scoreEl.textContent = env.score;
+
+    const ROT = { 1: Math.PI / 2, 2: -Math.PI / 2, 3: Math.PI, 4: 0 };
+    if (ROT[action] !== undefined) view.setPlayerRotation(ROT[action]);
 
     if (checkCollision()) triggerGameOver();
   });

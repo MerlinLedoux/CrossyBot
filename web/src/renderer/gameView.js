@@ -1,95 +1,137 @@
 import * as THREE from 'three';
 import { LaneType } from '../game/lane.js';
-import { GRID_W, GRID_H } from '../game/constants.js';
+import { GRID_W, GRID_H, PLAYABLE_MIN, PLAYABLE_MAX } from '../game/constants.js';
 
 // ── couleurs de fond des lanes ────────────────────────────────────────────────
 const LANE_COLORS = {
-  [LaneType.SAFE]:  0x6ec84b,
-  [LaneType.GRASS]: 0x378020,
-  [LaneType.ROAD]:  0x2e2e2e,
-  [LaneType.WATER]: 0x1a6fc4,
-  [LaneType.LILY]:  0x1458a0,
+  [LaneType.SAFE]: 0x6ec84b,
+  [LaneType.GRASS]: 0x8bb34f,
+  [LaneType.ROAD]: 0x3d414e,
+  [LaneType.WATER]: 0x67c4e9,
+  [LaneType.LILY]: 0x67c4e9,
 };
+const GRASS_COLOR_ALT = 0x7aa345;
+
+// ── hauteur Y de chaque type de lane ─────────────────────────────────────────
+const LANE_Y = {
+  [LaneType.SAFE]:  0.2,
+  [LaneType.GRASS]: 0.2,
+  [LaneType.ROAD]:  0.1,
+  [LaneType.WATER]: 0,
+  [LaneType.LILY]:  0,
+};
+
+// Épaisseur des dalles de terrain (assez grande pour ne jamais voir de vide)
+const SLAB_THICKNESS = 0.5;
+
+// ── géométrie des 3 dalles par lane ──────────────────────────────────────────
+const EXTRA_COLS  = 3;
+const SIDE_W      = PLAYABLE_MIN + EXTRA_COLS;                        // 5
+const CENTER_W    = PLAYABLE_MAX - PLAYABLE_MIN + 1;                  // 9
+const RIGHT_W     = GRID_W + EXTRA_COLS - PLAYABLE_MAX - 1;          // 5
+const LEFT_CX     = (PLAYABLE_MIN - EXTRA_COLS) / 2;                 // -0.5
+const CENTER_CX   = (PLAYABLE_MIN + PLAYABLE_MAX + 1) / 2;           // 6.5
+const RIGHT_CX    = (PLAYABLE_MAX + 1 + GRID_W + EXTRA_COLS) / 2;   // 13.5
 
 // Couleurs des murs (colonnes 0-1 et 11-12)
 const WALL_COLOR = 0x1a1a1a;
 
 // ── échelles des modèles — à ajuster en fonction de la taille Blender ─────────
 const MODEL_SCALE = {
-  player:           0.1,
+  player: 0.1,
   [LaneType.GRASS]: 0.1,
-  [LaneType.ROAD]:  0.1,
+  [LaneType.ROAD]: 0.1,
   [LaneType.WATER]: 0.1,
-  [LaneType.LILY]:  0.1,
+  [LaneType.LILY]: 0.1,
 };
 
 // Taille de base (en cases) de chaque modèle tel qu'exporté depuis Blender.
 // Sert à normaliser la mise à l'échelle sur la largeur réelle de l'obstacle.
 const MODEL_BASE_WIDTH = {
-  [LaneType.ROAD]:  2,   // modèle voiture = 2 cases
+  [LaneType.ROAD]: 2,   // modèle voiture = 2 cases
   [LaneType.WATER]: 3,   // modèle bûche   = 3 cases
 };
 
 export class GameView {
   constructor(scene, camera, models) {
-    this.scene   = scene;
-    this.camera  = camera;
-    this.models  = models;
+    this.scene = scene;
+    this.camera = camera;
+    this.models = models;
 
     // Groupes Three.js
-    this.laneGroup     = new THREE.Group();
+    this.laneGroup = new THREE.Group();
     this.obstacleGroup = new THREE.Group();
     scene.add(this.laneGroup);
     scene.add(this.obstacleGroup);
 
-    // ── Fond de lanes : pool de GRID_H plans ─────────────────────────────────
-    // EXTRA_COLS = 3 colonnes supplémentaires non jouables sur chaque côté.
-    // Le plan s'étend de x = -3 à x = GRID_W + 3, centre inchangé (GRID_W/2).
-    const EXTRA_COLS = 3;
-    const planeGeo = new THREE.PlaneGeometry(GRID_W + EXTRA_COLS * 2, 1);
-    this._laneMeshes    = [];
-    this._laneMaterials = [];
+    // ── Fond de lanes : 3 dalles par lane (gauche / centre / droite) ─────────
+    const leftGeo   = new THREE.BoxGeometry(SIDE_W,   SLAB_THICKNESS, 1);
+    const centerGeo = new THREE.BoxGeometry(CENTER_W, SLAB_THICKNESS, 1);
+    const rightGeo  = new THREE.BoxGeometry(RIGHT_W,  SLAB_THICKNESS, 1);
+    this._laneL = []; this._laneC = []; this._laneR = [];
+    this._laneMatL = []; this._laneMatC = []; this._laneMatR = [];
     for (let i = 0; i < GRID_H; i++) {
-      const mat  = new THREE.MeshLambertMaterial({ color: LANE_COLORS[LaneType.SAFE] });
-      const mesh = new THREE.Mesh(planeGeo, mat);
-      mesh.rotation.x = -Math.PI / 2;
-      this.laneGroup.add(mesh);
-      this._laneMeshes.push(mesh);
-      this._laneMaterials.push(mat);
+      const mL = new THREE.MeshLambertMaterial({ color: 0x000000 });
+      const mC = new THREE.MeshLambertMaterial({ color: LANE_COLORS[LaneType.SAFE] });
+      const mR = new THREE.MeshLambertMaterial({ color: 0x000000 });
+      const meshL = new THREE.Mesh(leftGeo,   mL);
+      const meshC = new THREE.Mesh(centerGeo, mC);
+      const meshR = new THREE.Mesh(rightGeo,  mR);
+      meshL.position.x = LEFT_CX;
+      meshC.position.x = CENTER_CX;
+      meshR.position.x = RIGHT_CX;
+      this.laneGroup.add(meshL); this.laneGroup.add(meshC); this.laneGroup.add(meshR);
+      this._laneL.push(meshL); this._laneC.push(meshC); this._laneR.push(meshR);
+      this._laneMatL.push(mL); this._laneMatC.push(mC); this._laneMatR.push(mR);
     }
 
     // ── Murs latéraux (bandes permanentes gauche et droite) ───────────────────
     const wallGeoL = new THREE.PlaneGeometry(2, 200);
     const wallGeoR = new THREE.PlaneGeometry(2, 200);
-    const wallMat  = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
+    const wallMat = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
     const wallL = new THREE.Mesh(wallGeoL, wallMat);
     const wallR = new THREE.Mesh(wallGeoR, wallMat);
     wallL.rotation.x = -Math.PI / 2;
     wallR.rotation.x = -Math.PI / 2;
-    wallL.position.set(1,          -0.01, 100);
+    wallL.position.set(1, -0.01, 100);
     wallR.position.set(GRID_W - 1, -0.01, 100);
     scene.add(wallL); scene.add(wallR);
     this._wallL = wallL; this._wallR = wallR;
 
-    // ── Assombrissement des colonnes hors grille (-3 à 0 et 13 à 16) ─────────
-    // Plan large centré sur la zone extra de chaque côté, suit le joueur en Z.
-    const EXTRA = 5;
-    const darkGeo = new THREE.PlaneGeometry(EXTRA, 60);
-    const darkMat = new THREE.MeshBasicMaterial({
-      color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false,
-    });
-    this._darkL = new THREE.Mesh(darkGeo, darkMat);
-    this._darkR = new THREE.Mesh(darkGeo, darkMat);
-    this._darkL.rotation.x = -Math.PI / 2;
-    this._darkR.rotation.x = -Math.PI / 2;
-    this._darkL.position.set(-0.5,          0.002, 0);
-    this._darkR.position.set(GRID_W + 0.5,  0.002, 0);
-    scene.add(this._darkL); scene.add(this._darkR);
+
+
+
+    // ── Marquages au sol entre lanes de route consécutives ───────────────────
+    const roadW  = PLAYABLE_MAX - PLAYABLE_MIN + 1;
+    const roadCx = (PLAYABLE_MIN + PLAYABLE_MAX + 1) / 2;
+    const dashCanvas = document.createElement('canvas');
+    dashCanvas.width = 128; dashCanvas.height = 8;
+    const dctx = dashCanvas.getContext('2d');
+    dctx.clearRect(0, 0, 128, 8);
+    dctx.fillStyle = '#202125';
+    dctx.fillRect(64, 0, 128, 8);
+    const fullW = GRID_W + EXTRA_COLS * 2;
+    const dashTex = new THREE.CanvasTexture(dashCanvas);
+    dashTex.wrapS = THREE.RepeatWrapping;
+    dashTex.repeat.set(fullW / 2, 1);
+    const stripeGeo = new THREE.PlaneGeometry(fullW, 0.10);
+    const stripeMat = new THREE.MeshBasicMaterial({ map: dashTex, transparent: true, alphaTest: 0.4 });
+    this._stripes = [];
+    for (let i = 0; i < GRID_H; i++) {
+      const mesh = new THREE.Mesh(stripeGeo, stripeMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.x = GRID_W / 2;
+      mesh.position.y = LANE_Y[LaneType.ROAD] + 0.003;
+      mesh.visible = false;
+      scene.add(mesh);
+      this._stripes.push(mesh);
+    }
 
     // ── Joueur ────────────────────────────────────────────────────────────────
     const s = MODEL_SCALE.player;
     this.playerMesh = models.player.clone();
     this.playerMesh.scale.setScalar(s);
+    this.playerMesh.rotation.y = Math.PI/2;
     this.playerMesh.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
     scene.add(this.playerMesh);
 
@@ -97,29 +139,59 @@ export class GameView {
     this._camTarget = new THREE.Vector3();
   }
 
-  update(env) {
-    const visLanes  = env.getVisibleLanes();
-    const camRow    = env.cameraStartRow;
-    const playerRow = env.playerRow;
-    const playerX   = env.playerX;
+  setPlayerRotation(y) {
+    this.playerMesh.rotation.y = y;
+  }
 
-    // ── Mise à jour des fonds de lanes ────────────────────────────────────────
+  update(env) {
+    const visLanes = env.getVisibleLanes();
+    const camRow = env.cameraStartRow;
+    const playerRow = env.playerRow;
+    const playerX = env.playerX;
+
+    // ── Mise à jour des fonds de lanes (3 dalles par lane) ───────────────────
     for (let i = 0; i < GRID_H; i++) {
-      const mesh = this._laneMeshes[i];
+      const meshL = this._laneL[i], meshC = this._laneC[i], meshR = this._laneR[i];
       if (i < visLanes.length) {
-        this._laneMaterials[i].color.setHex(LANE_COLORS[visLanes[i].laneType]);
-        mesh.position.set(GRID_W / 2, 0, camRow + i);
-        mesh.visible = true;
+        const lane   = visLanes[i];
+        const rowAbs = camRow + i;
+        const laneY  = LANE_Y[lane.laneType] ?? 0;
+        const y      = laneY - SLAB_THICKNESS / 2;
+        const z      = camRow + i;
+
+        const centerColor = lane.laneType === LaneType.GRASS && rowAbs % 2 === 1
+          ? GRASS_COLOR_ALT : LANE_COLORS[lane.laneType];
+        const sideColor = new THREE.Color(centerColor).multiplyScalar(0.65);
+
+        this._laneMatC[i].color.setHex(centerColor);
+        this._laneMatL[i].color.copy(sideColor);
+        this._laneMatR[i].color.copy(sideColor);
+
+        meshL.position.set(LEFT_CX,   y, z);
+        meshC.position.set(CENTER_CX, y, z);
+        meshR.position.set(RIGHT_CX,  y, z);
+        meshL.visible = meshC.visible = meshR.visible = true;
       } else {
-        mesh.visible = false;
+        meshL.visible = meshC.visible = meshR.visible = false;
       }
     }
 
-    // ── Mise à jour de la position des murs et des zones sombres ─────────────
-    this._wallL.position.z  = playerRow;
-    this._wallR.position.z  = playerRow;
-    this._darkL.position.z  = playerRow;
-    this._darkR.position.z  = playerRow;
+
+    // ── Mise à jour des murs ──────────────────────────────────────────────────
+    this._wallL.position.z = playerRow;
+    this._wallR.position.z = playerRow;
+
+
+    // ── Marquages au sol ─────────────────────────────────────────────────────
+    let si = 0;
+    for (let i = 0; i < visLanes.length - 1; i++) {
+      if (visLanes[i].laneType === LaneType.ROAD && visLanes[i + 1].laneType === LaneType.ROAD) {
+        this._stripes[si].position.z = camRow + i + 0.5;
+        this._stripes[si].visible = true;
+        si++;
+      }
+    }
+    for (; si < this._stripes.length; si++) this._stripes[si].visible = false;
 
     // ── Reconstruction des obstacles ─────────────────────────────────────────
     // On vide le groupe et on le reconstruit chaque frame.
@@ -127,12 +199,12 @@ export class GameView {
     this.obstacleGroup.clear();
 
     for (let i = 0; i < visLanes.length; i++) {
-      const lane    = visLanes[i];
-      const rowAbs  = camRow + i;
+      const lane = visLanes[i];
+      const rowAbs = camRow + i;
       const baseModel = this.models[lane.laneType];
       if (!baseModel) continue;
 
-      const scale      = MODEL_SCALE[lane.laneType] ?? 0.5;
+      const scale = MODEL_SCALE[lane.laneType] ?? 0.5;
       const movingLeft = lane._speed < 0;
 
       for (const [pos, width] of lane.iterObstacles()) {
@@ -148,20 +220,26 @@ export class GameView {
           mesh.scale.x = scale * (width / baseW);
         }
 
-        // Retournement pour les obstacles allant à gauche
-        if (movingLeft) mesh.rotation.y = Math.PI;
+        // Retournement : voitures toujours dans le sens de déplacement
+        if (lane.laneType === LaneType.ROAD) {
+          mesh.rotation.y = movingLeft ? 0 : Math.PI;
+        } else if (movingLeft) {
+          mesh.rotation.y = Math.PI;
+        }
 
         // Position centrée sur la case/obstacle
         const cx = pos + width / 2;
-        mesh.position.set(cx, 0, rowAbs);
+        mesh.position.set(cx, LANE_Y[lane.laneType] ?? 0, rowAbs);
 
         mesh.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
         this.obstacleGroup.add(mesh);
       }
     }
 
-    // ── Position du joueur ────────────────────────────────────────────────────
-    this.playerMesh.position.set(playerX, 0, playerRow);
+    // ── Position et orientation du joueur ────────────────────────────────────
+    const playerY = LANE_Y[env.playerLane.laneType] ?? 0;
+    this.playerMesh.position.set(playerX, playerY, playerRow);
+
 
     // ── Caméra : suit le joueur avec lerp doux ────────────────────────────────
     const targetCamX = playerX;

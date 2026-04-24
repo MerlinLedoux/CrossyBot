@@ -92,6 +92,14 @@ export class Lane {
   }
 
   // ── tests de collision ────────────────────────────────────────────────────
+  overlapsPosition(px, radius = 0.3) {
+    for (let i = 0; i < this._positions.length; i++) {
+      if (px + radius > this._positions[i] && px - radius < this._positions[i] + this._widths[i])
+        return true;
+    }
+    return false;
+  }
+
   hasObstacleAt(x) {
     for (let i = 0; i < this._positions.length; i++) {
       if (this._positions[i] < x + 1 && this._positions[i] + this._widths[i] > x) return true;
