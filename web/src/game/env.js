@@ -74,7 +74,34 @@ export class CrossyEnv {
         this._lastWasUnsafe = false;
       }
     }
+    // Valide la transition depuis la dernière lane existante vers la première de la section
+    if (this.lanes.length > 0 && section.length > 0)
+      this._validateTransition(this.lanes[this.lanes.length - 1], section[0]);
+
     return section;
+  }
+
+  _validateTransition(prevLane, nextLane) {
+    const isGrass = t => t === LaneType.GRASS;
+    const isLily  = t => t === LaneType.LILY;
+
+    if (isLily(prevLane.laneType) && isGrass(nextLane.laneType)) {
+      // LILY → GRASS : supprimer les arbres à toutes les positions des nénuphars
+      for (let x = PLAYABLE_MIN; x <= PLAYABLE_MAX; x++) {
+        if (prevLane.hasObstacleAt(x)) {
+          const idx = nextLane._positions.findIndex(p => Math.floor(p) === x);
+          if (idx !== -1) { nextLane._positions.splice(idx, 1); nextLane._widths.splice(idx, 1); }
+        }
+      }
+    } else if (isGrass(prevLane.laneType) && isLily(nextLane.laneType)) {
+      // GRASS → LILY : s'assurer qu'au moins une colonne libre de l'herbe a un nénuphar
+      for (let x = PLAYABLE_MIN; x <= PLAYABLE_MAX; x++) {
+        if (!prevLane.hasObstacleAt(x) && nextLane.hasObstacleAt(x)) return;
+      }
+      for (let x = PLAYABLE_MIN; x <= PLAYABLE_MAX; x++) {
+        if (!prevLane.hasObstacleAt(x)) { nextLane._positions.push(x); nextLane._widths.push(1); return; }
+      }
+    }
   }
 
   _makeRoadGroup(score) {
@@ -164,10 +191,21 @@ export class CrossyEnv {
         const col = Math.floor(pos);
         if (col >= PLAYABLE_MIN && col <= PLAYABLE_MAX) bCols.add(col);
       }
+      // Vérifie s'il existe déjà au moins une colonne commune
+      let connected = false;
       for (const [pos] of a.iterObstacles()) {
-        const col = Math.floor(pos);
-        if (col < PLAYABLE_MIN || col > PLAYABLE_MAX) continue;
-        if (!bCols.has(col)) { b._positions.push(col); b._widths.push(1); bCols.add(col); }
+        if (bCols.has(Math.floor(pos))) { connected = true; break; }
+      }
+      // Si non, ajoute une seule colonne de a dans b
+      if (!connected) {
+        for (const [pos] of a.iterObstacles()) {
+          const col = Math.floor(pos);
+          if (col >= PLAYABLE_MIN && col <= PLAYABLE_MAX) {
+            b._positions.push(col);
+            b._widths.push(1);
+            break;
+          }
+        }
       }
     }
   }

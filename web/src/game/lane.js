@@ -19,8 +19,7 @@ export class Lane {
     this._positions = [];
     this._widths    = [];
 
-    if (laneType === LaneType.GRASS) {
-      // Colonnes hors zone jouable : toujours des arbres (-2 à 14)
+    if (laneType === LaneType.GRASS) { // Colonnes hors zone jouable : toujours des arbres (-2 à 14)
       for (let x = -2; x < GRID_W + 2; x++) {
         if (x < PLAYABLE_MIN || x > PLAYABLE_MAX) {
           this._positions.push(x);
@@ -36,7 +35,8 @@ export class Lane {
         }
       }
       this._positions.sort((a, b) => a - b);
-    } else if (laneType === LaneType.LILY) {
+    }
+    else if (laneType === LaneType.LILY) {
       const n = Math.min(CONFIG.lily_count.sample(score), PLAYABLE_W);
       if (n > 0) {
         for (const s of _sampleNoReplace(PLAYABLE_W, n).sort((a, b) => a - b)) {
@@ -44,7 +44,8 @@ export class Lane {
           this._widths.push(1);
         }
       }
-    } else if (laneType === LaneType.WATER || laneType === LaneType.ROAD) {
+    } 
+    else if (laneType === LaneType.WATER || laneType === LaneType.ROAD) {
       this._generateStream();
     }
   }
