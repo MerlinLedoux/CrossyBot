@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>CrossyBot</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+
+    #ui {
+      position: fixed;
+      top: 16px;
+      left: 20px;
+      color: white;
+      font-family: monospace;
+      font-size: 28px;
+      font-weight: bold;
+      text-shadow: 2px 2px 6px #000;
+      pointer-events: none;
+    }
+
+    #controls {
+      position: fixed;
+      bottom: 16px;
+      left: 20px;
+      color: rgba(255,255,255,0.5);
+      font-family: monospace;
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    #gameover {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      color: white;
+      font-family: monospace;
+      text-align: center;
+      padding-top: 28vh;
+    }
+    #gameover h1 { font-size: 72px; color: #ff4040; letter-spacing: 4px; }
+    #gameover .final { font-size: 26px; margin-top: 20px; color: #ddd; }
+    #gameover .hint  { font-size: 18px; margin-top: 36px; color: #888; }
+  </style>
+</head>
+<body>
+  <div id="ui">Score : <span id="score">0</span></div>
+  <div id="controls">↑ Avancer &nbsp; ↓ Reculer &nbsp; ← → Gauche/Droite &nbsp; R Rejouer</div>
+
+  <div id="gameover">
+    <h1>GAME OVER</h1>
+    <div class="final" id="final-score">Score final : 0</div>
+    <div class="hint">[ R ] pour rejouer</div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
