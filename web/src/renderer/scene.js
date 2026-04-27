@@ -31,16 +31,19 @@ export function createScene() {
   scene.add(ambient);
 
   const sun = new THREE.DirectionalLight(0xfffce0, 2.0);
-  sun.position.set(8, 20, -5);
+  sun.position.set(10, 10, 0);
   sun.castShadow = true;
+  
   sun.shadow.mapSize.width  = 2048;
   sun.shadow.mapSize.height = 2048;
-  sun.shadow.camera.near = 0.5;
-  sun.shadow.camera.far  = 80;
-  sun.shadow.camera.left   = -20;
-  sun.shadow.camera.right  =  20;
-  sun.shadow.camera.top    =  20;
-  sun.shadow.camera.bottom = -20;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far  = 60;
+  sun.shadow.camera.left   = -15;
+  sun.shadow.camera.right  =  15;
+  sun.shadow.camera.top    =  15;
+  sun.shadow.camera.bottom = -15;
+  sun.shadow.bias = -0.001;
+  scene.add(sun.target);
   scene.add(sun);
 
   // Lumière de remplissage douce
@@ -58,5 +61,5 @@ export function createScene() {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  return { renderer, scene, camera };
+  return { renderer, scene, camera, sun };
 }

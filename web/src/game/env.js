@@ -5,6 +5,7 @@ import { CONFIG } from './generationConfig.js';
 const ACTION_DELTAS = { 0: [0, 0], 1: [0, 1], 2: [0, -1], 3: [1, 0], 4: [-1, 0] };
 
 const BLOCKING_ROWS = 3;   // lignes d'herbe bloquantes au départ
+const TRIM_BUFFER   = 3;   // rows conservés derrière cameraStartRow pour éviter le pop-in
 
 function makeBlockingGrass() {
   const lane = new Lane(LaneType.GRASS, 0, 0);
@@ -38,8 +39,9 @@ export class CrossyEnv {
   get playerLane() { return this.lanes[this.playerRow - this.dequeStartRow]; }
 
   getVisibleLanes() {
-    const start = this.cameraStartRow - this.dequeStartRow;
-    return this.lanes.slice(start, start + GRID_H);
+    // Démarre depuis dequeStartRow (TRIM_BUFFER rows derrière cameraStartRow)
+    // pour que la caméra ne voie jamais de vide pendant son lerp.
+    return this.lanes.slice(0, GRID_H + TRIM_BUFFER);
   }
 
   // ── terrain ───────────────────────────────────────────────────────────────
@@ -212,7 +214,7 @@ export class CrossyEnv {
 
   // ── buffer management ─────────────────────────────────────────────────────
   _trimLanes() {
-    while (this.dequeStartRow < this.cameraStartRow) { this.lanes.shift(); this.dequeStartRow++; }
+    while (this.dequeStartRow + TRIM_BUFFER < this.cameraStartRow) { this.lanes.shift(); this.dequeStartRow++; }
   }
 
   _ensureLanes() {

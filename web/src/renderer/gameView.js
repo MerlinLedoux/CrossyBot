@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { LaneType } from '../game/lane.js';
-import { GRID_W, GRID_H, PLAYABLE_MIN, PLAYABLE_MAX } from '../game/constants.js';
+import { GRID_W, GRID_H, PLAYABLE_MIN, PLAYABLE_MAX, LOOK_BEHIND } from '../game/constants.js';
+
+const RENDER_ROWS = GRID_H + 3;  // GRID_H + TRIM_BUFFER : pool de meshes couvrant les rows tampon
 
 // ── couleurs de fond des lanes ────────────────────────────────────────────────
 const LANE_COLORS = {
@@ -20,6 +22,15 @@ const LANE_Y = {
   [LaneType.WATER]: 0,
   [LaneType.LILY]:  0,
 };
+
+// Hauteur supplémentaire du joueur quand il se tient sur un objet (bûche / nénuphar)
+const PLAYER_Y_OFFSET = {
+  [LaneType.WATER]: 0.15,
+  [LaneType.LILY]:  0.08,
+};
+
+const HOP_HEIGHT   = 0.35;  // hauteur max de l'arc en unités monde
+const HOP_DURATION = 0.13;  // durée du saut en secondes
 
 // Épaisseur des dalles de terrain (assez grande pour ne jamais voir de vide)
 const SLAB_THICKNESS = 0.5;
@@ -53,10 +64,11 @@ const MODEL_BASE_WIDTH = {
 };
 
 export class GameView {
-  constructor(scene, camera, models) {
+  constructor(scene, camera, models, sun) {
     this.scene = scene;
     this.camera = camera;
     this.models = models;
+    this._sun = sun;
 
     // Groupes Three.js
     this.laneGroup = new THREE.Group();
@@ -70,7 +82,7 @@ export class GameView {
     const rightGeo  = new THREE.BoxGeometry(RIGHT_W,  SLAB_THICKNESS, 1);
     this._laneL = []; this._laneC = []; this._laneR = [];
     this._laneMatL = []; this._laneMatC = []; this._laneMatR = [];
-    for (let i = 0; i < GRID_H; i++) {
+    for (let i = 0; i < RENDER_ROWS; i++) {
       const mL = new THREE.MeshLambertMaterial({ color: 0x000000 });
       const mC = new THREE.MeshLambertMaterial({ color: LANE_COLORS[LaneType.SAFE] });
       const mR = new THREE.MeshLambertMaterial({ color: 0x000000 });
@@ -80,6 +92,7 @@ export class GameView {
       meshL.position.x = LEFT_CX;
       meshC.position.x = CENTER_CX;
       meshR.position.x = RIGHT_CX;
+      meshL.receiveShadow = meshC.receiveShadow = meshR.receiveShadow = true;
       this.laneGroup.add(meshL); this.laneGroup.add(meshC); this.laneGroup.add(meshR);
       this._laneL.push(meshL); this._laneC.push(meshC); this._laneR.push(meshR);
       this._laneMatL.push(mL); this._laneMatC.push(mC); this._laneMatR.push(mR);
@@ -95,6 +108,7 @@ export class GameView {
     wallR.rotation.x = -Math.PI / 2;
     wallL.position.set(1, -0.01, 100);
     wallR.position.set(GRID_W - 1, -0.01, 100);
+    wallL.receiveShadow = wallR.receiveShadow = true;
     scene.add(wallL); scene.add(wallR);
     this._wallL = wallL; this._wallR = wallR;
 
@@ -117,7 +131,7 @@ export class GameView {
     const stripeGeo = new THREE.PlaneGeometry(fullW, 0.10);
     const stripeMat = new THREE.MeshBasicMaterial({ map: dashTex, transparent: true, alphaTest: 0.4 });
     this._stripes = [];
-    for (let i = 0; i < GRID_H; i++) {
+    for (let i = 0; i < RENDER_ROWS; i++) {
       const mesh = new THREE.Mesh(stripeGeo, stripeMat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.x = GRID_W / 2;
@@ -137,20 +151,35 @@ export class GameView {
 
     // Cible de caméra lissée
     this._camTarget = new THREE.Vector3();
+
+    // Animation de saut
+    this._playerVisualPos = new THREE.Vector3();
+    this._playerAnimFrom  = new THREE.Vector3();
+    this._playerAnimTo    = new THREE.Vector3();
+    this._playerAnimT     = 1;
+  }
+
+  triggerHop() {
+    this._playerAnimFrom.copy(this._playerVisualPos);
+    this._playerAnimT = 0;
   }
 
   setPlayerRotation(y) {
     this.playerMesh.rotation.y = y;
   }
 
-  update(env) {
+  update(env, dt, scrollRow = env.cameraStartRow) {
     const visLanes = env.getVisibleLanes();
-    const camRow = env.cameraStartRow;
+    const camRow = env.dequeStartRow;   // = cameraStartRow - TRIM_BUFFER
     const playerRow = env.playerRow;
     const playerX = env.playerX;
 
-    // ── Mise à jour des fonds de lanes (3 dalles par lane) ───────────────────
-    for (let i = 0; i < GRID_H; i++) {
+    // ── Soleil suit le joueur ─────────────────────────────────────────────────
+    this._sun.position.set(playerX + 10, 10, playerRow);
+    this._sun.target.position.set(playerX, 0, playerRow);
+
+    // Mise à jour des fonds de lanes (3 dalles par lane)
+    for (let i = 0; i < RENDER_ROWS; i++) {
       const meshL = this._laneL[i], meshC = this._laneC[i], meshR = this._laneR[i];
       if (i < visLanes.length) {
         const lane   = visLanes[i];
@@ -177,12 +206,12 @@ export class GameView {
     }
 
 
-    // ── Mise à jour des murs ──────────────────────────────────────────────────
+    // Mise à jour des murs
     this._wallL.position.z = playerRow;
     this._wallR.position.z = playerRow;
 
 
-    // ── Marquages au sol ─────────────────────────────────────────────────────
+    // Marquages au sol
     let si = 0;
     for (let i = 0; i < visLanes.length - 1; i++) {
       if (visLanes[i].laneType === LaneType.ROAD && visLanes[i + 1].laneType === LaneType.ROAD) {
@@ -193,7 +222,7 @@ export class GameView {
     }
     for (; si < this._stripes.length; si++) this._stripes[si].visible = false;
 
-    // ── Reconstruction des obstacles ─────────────────────────────────────────
+    // Reconstruction des obstacles
     // On vide le groupe et on le reconstruit chaque frame.
     // Avec GRID_H=13 lignes max, c'est acceptable en perf.
     this.obstacleGroup.clear();
@@ -223,8 +252,11 @@ export class GameView {
         // Retournement : voitures toujours dans le sens de déplacement
         if (lane.laneType === LaneType.ROAD) {
           mesh.rotation.y = movingLeft ? 0 : Math.PI;
-        } else if (movingLeft) {
-          mesh.rotation.y = Math.PI;
+        }
+        if (lane.laneType === LaneType.LILY) {
+          const t = performance.now() / 1000;
+          const phase = ((rowAbs * 31 + Math.floor(pos)) * 2.399963) % (Math.PI * 2);
+          mesh.rotation.y = phase + t * 0.25;
         }
 
         // Position centrée sur la case/obstacle
@@ -236,23 +268,37 @@ export class GameView {
       }
     }
 
-    // ── Position et orientation du joueur ────────────────────────────────────
-    const playerY = LANE_Y[env.playerLane.laneType] ?? 0;
-    this.playerMesh.position.set(playerX, playerY, playerRow);
+    // ── Animation de saut du joueur ───────────────────────────────────────────
+    const laneType = env.playerLane.laneType;
+    const targetY = (LANE_Y[laneType] ?? 0) + (PLAYER_Y_OFFSET[laneType] ?? 0);
+    this._playerAnimTo.set(playerX, targetY, playerRow);
 
+    if (this._playerAnimT < 1) {
+      this._playerAnimT = Math.min(1, this._playerAnimT + dt / HOP_DURATION);
+      const t = this._playerAnimT;
+      this._playerVisualPos.lerpVectors(this._playerAnimFrom, this._playerAnimTo, t);
+      this._playerVisualPos.y += Math.sin(t * Math.PI) * HOP_HEIGHT;
+    } else {
+      this._playerVisualPos.copy(this._playerAnimTo);
+    }
 
-    // ── Caméra : suit le joueur avec lerp doux ────────────────────────────────
-    const targetCamX = playerX;
-    const targetCamZ = playerRow;
+    this.playerMesh.position.copy(this._playerVisualPos);
+
+    // ── Caméra : avance avec le scroll, suivi latéral amorti ─────────────────
+    // Z : scroll ou joueur (si en avance)
+    const camTargetZ = Math.max(scrollRow + LOOK_BEHIND, this._playerVisualPos.z);
+    // X : amorti vers le centre de la carte — évite de montrer le vide sur les côtés
+    const mapCenterX = GRID_W / 2;
+    const camTargetX = mapCenterX + (this._playerVisualPos.x - mapCenterX) * 0.2;
     this._camTarget.lerp(
-      new THREE.Vector3(targetCamX, 0, targetCamZ),
+      new THREE.Vector3(camTargetX, 0, camTargetZ),
       0.12,
     );
 
     this.camera.position.set(
-      this._camTarget.x - 2.5,   // décalage droite
-      7,                       // hauteur → montre le dessus des objets
-      this._camTarget.z - 5,   // recul → montre les lignes devant
+      this._camTarget.x - 2.5,
+      7,
+      this._camTarget.z - 5,
     );
     this.camera.lookAt(this._camTarget.x, 0, this._camTarget.z + 2);
   }
