@@ -4,6 +4,7 @@ import { GameView }     from './renderer/gameView.js';
 import { CrossyEnv }    from './game/env.js';
 import { LaneType }     from './game/lane.js';
 import { PLAYABLE_MIN, PLAYABLE_MAX, CELLS_PER_SEC, MAX_SPEED, GRID_W } from './game/constants.js';
+import { loadAgent, getAction } from './ai/agent.js';
 
 const KEY_TO_ACTION = { ArrowUp: 1, ArrowDown: 2, ArrowLeft: 3, ArrowRight: 4 };
 
@@ -16,12 +17,34 @@ async function main() {
   const env  = new CrossyEnv();
   const view = new GameView(scene, camera, models, sun);
 
-  const scoreEl     = document.getElementById('score');
-  const gameoverEl  = document.getElementById('gameover');
+  const scoreEl      = document.getElementById('score');
+  const gameoverEl   = document.getElementById('gameover');
   const finalScoreEl = document.getElementById('final-score');
+  const aiBtnEl      = document.getElementById('ai-btn');
 
   let dead      = false;
   let scrollRow = env.cameraStartRow;
+
+  // ── Mode IA ────────────────────────────────────────────────────────────────
+  let aiMode  = false;
+  let aiTimer = 0;
+  const AI_INTERVAL = 1 / 3;   // 3 actions/sec, identique à l'entraînement
+  const ACTION_ROT  = { 1: Math.PI / 2, 2: -Math.PI / 2, 3: Math.PI, 4: 0 };
+
+  loadAgent('/crossybot.json').then(() => {
+    aiBtnEl.disabled    = false;
+    aiBtnEl.textContent = '🤖 Mode IA';
+  }).catch(() => {
+    aiBtnEl.textContent = '❌ Modèle absent';
+    console.warn('Modèle IA introuvable — lancez : python export_model.py');
+  });
+
+  aiBtnEl.addEventListener('click', () => {
+    aiMode  = !aiMode;
+    aiTimer = 0;
+    aiBtnEl.classList.toggle('active', aiMode);
+    aiBtnEl.textContent = aiMode ? '👤 Mode Humain' : '🤖 Mode IA';
+  });
 
   // ── Détection de mort ──────────────────────────────────────────────────────
   function checkCollision() {
@@ -46,12 +69,13 @@ async function main() {
       env.reset();
       dead      = false;
       scrollRow = env.cameraStartRow;
+      aiTimer   = 0;
       gameoverEl.style.display = 'none';
       scoreEl.textContent      = '0';
       return;
     }
 
-    if (dead) return;
+    if (dead || aiMode) return;
 
     const action = KEY_TO_ACTION[e.key];
     if (action === undefined) return;
@@ -99,6 +123,23 @@ async function main() {
       if (onLog) {
         const delta = (lane._speed / MAX_SPEED) * CELLS_PER_SEC * dt;
         env.playerX = Math.max(-0.5, Math.min(GRID_W - 0.5, env.playerX + delta));
+      }
+
+      // ── Action de l'IA ────────────────────────────────────────────────────
+      if (aiMode) {
+        aiTimer += dt;
+        if (aiTimer >= AI_INTERVAL) {
+          aiTimer -= AI_INTERVAL;
+          const action = getAction(env);
+          if (action !== 0) {
+            view.triggerHop();
+            if (ACTION_ROT[action] !== undefined) view.setPlayerRotation(ACTION_ROT[action]);
+          }
+          env._applyAction(action);
+          env._trimLanes();
+          env._ensureLanes();
+          scoreEl.textContent = env.score;
+        }
       }
 
       // Vérification collision continue (voiture, eau, bord)

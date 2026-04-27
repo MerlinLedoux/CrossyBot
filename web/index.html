@@ -43,10 +43,35 @@
     #gameover h1 { font-size: 72px; color: #ff4040; letter-spacing: 4px; }
     #gameover .final { font-size: 26px; margin-top: 20px; color: #ddd; }
     #gameover .hint  { font-size: 18px; margin-top: 36px; color: #888; }
+
+    #ai-btn {
+      position: fixed;
+      top: 16px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.55);
+      color: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 8px 18px;
+      font-family: monospace;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 6px;
+      letter-spacing: 0.5px;
+      transition: background 0.2s, border-color 0.2s;
+      z-index: 100;
+    }
+    #ai-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+    #ai-btn.active {
+      background: rgba(40, 180, 80, 0.45);
+      border-color: rgba(60, 220, 90, 0.8);
+    }
+    #ai-btn:disabled { opacity: 0.45; cursor: wait; }
   </style>
 </head>
 <body>
   <div id="ui">Score : <span id="score">0</span></div>
+  <button id="ai-btn" disabled>⏳ Chargement…</button>
   <div id="controls">↑ Avancer &nbsp; ↓ Reculer &nbsp; ← → Gauche/Droite &nbsp; R Rejouer</div>
 
   <div id="gameover">
