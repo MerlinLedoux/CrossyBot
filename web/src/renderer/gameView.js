@@ -56,12 +56,6 @@ const MODEL_SCALE = {
   [LaneType.LILY]: 0.1,
 };
 
-// Taille de base (en cases) de chaque modèle tel qu'exporté depuis Blender.
-// Sert à normaliser la mise à l'échelle sur la largeur réelle de l'obstacle.
-const MODEL_BASE_WIDTH = {
-  [LaneType.ROAD]: 2,   // modèle voiture = 2 cases
-  [LaneType.WATER]: 3,   // modèle bûche   = 3 cases
-};
 
 export class GameView {
   constructor(scene, camera, models, sun) {
@@ -157,6 +151,8 @@ export class GameView {
     this._playerAnimFrom  = new THREE.Vector3();
     this._playerAnimTo    = new THREE.Vector3();
     this._playerAnimT     = 1;
+    // Couleur de voiture stable par lane (size-2 : même teinte sur toute la ligne)
+    this._laneCarVariant  = new WeakMap();
   }
 
   triggerHop() {
@@ -223,48 +219,80 @@ export class GameView {
     for (; si < this._stripes.length; si++) this._stripes[si].visible = false;
 
     // Reconstruction des obstacles
-    // On vide le groupe et on le reconstruit chaque frame.
-    // Avec GRID_H=13 lignes max, c'est acceptable en perf.
     this.obstacleGroup.clear();
 
     for (let i = 0; i < visLanes.length; i++) {
       const lane = visLanes[i];
       const rowAbs = camRow + i;
-      const baseModel = this.models[lane.laneType];
-      if (!baseModel) continue;
-
-      const scale = MODEL_SCALE[lane.laneType] ?? 0.5;
+      const scale = MODEL_SCALE[lane.laneType] ?? 0.1;
       const movingLeft = lane._speed < 0;
 
-      for (const [pos, width] of lane.iterObstacles()) {
-        // Ne pas dessiner les obstacles hors de l'écran
-        if (pos + width < -1 || pos > GRID_W + 1) continue;
+      if (lane.laneType === LaneType.ROAD) {
+        // Couleur stable pour les voitures de taille 2 (même teinte sur toute la ligne)
+        if (!this._laneCarVariant.has(lane))
+          this._laneCarVariant.set(lane, Math.floor(Math.random() * 4));
+        const colorIdx = this._laneCarVariant.get(lane);
 
-        const mesh = baseModel.clone();
-        mesh.scale.setScalar(scale);
-
-        // Largeur proportionnelle pour voitures et bûches
-        if (lane.laneType === LaneType.ROAD || lane.laneType === LaneType.WATER) {
-          const baseW = MODEL_BASE_WIDTH[lane.laneType] ?? 1;
-          mesh.scale.x = scale * (width / baseW);
-        }
-
-        // Retournement : voitures toujours dans le sens de déplacement
-        if (lane.laneType === LaneType.ROAD) {
+        for (const [pos, width] of lane.iterObstacles()) {
+          if (pos + width < -1 || pos > GRID_W + 1) continue;
+          const w = Math.round(width);
+          const baseModel = w === 1 ? this.models.cars[1]
+                          : w >= 3  ? this.models.cars[3]
+                          : this.models.cars[2][colorIdx];
+          const mesh = baseModel.clone();
+          mesh.scale.setScalar(scale);
           mesh.rotation.y = movingLeft ? 0 : Math.PI;
+          mesh.position.set(pos + width / 2, LANE_Y[LaneType.ROAD], rowAbs);
+          mesh.traverse(c => { if (c.isMesh) { c.castShadow = c.receiveShadow = true; } });
+          this.obstacleGroup.add(mesh);
         }
-        if (lane.laneType === LaneType.LILY) {
-          const t = performance.now() / 1000;
-          const phase = ((rowAbs * 31 + Math.floor(pos)) * 2.399963) % (Math.PI * 2);
+
+      } else if (lane.laneType === LaneType.WATER) {
+        for (const [pos, width] of lane.iterObstacles()) {
+          if (pos + width < -1 || pos > GRID_W + 1) continue;
+          const w = Math.min(4, Math.max(1, Math.round(width)));
+          const baseModel = this.models.logs[w];
+          if (!baseModel) continue;
+          const mesh = baseModel.clone();
+          mesh.scale.setScalar(scale);
+          mesh.position.set(pos + width / 2, LANE_Y[LaneType.WATER], rowAbs);
+          mesh.traverse(c => { if (c.isMesh) { c.castShadow = c.receiveShadow = true; } });
+          this.obstacleGroup.add(mesh);
+        }
+
+      } else if (lane.laneType === LaneType.GRASS) {
+        for (const [pos] of lane.iterObstacles()) {
+          if (pos + 1 < -2 || pos > GRID_W + 2) continue;
+          const x = Math.floor(pos);
+          const isPlayable = x >= PLAYABLE_MIN && x <= PLAYABLE_MAX;
+          // Hash déterministe : même arbre = même modèle à chaque frame
+          const hash = Math.abs(rowAbs * 31 + x) % (isPlayable ? 3 : 2);
+          const baseModel = isPlayable
+            ? this.models.treesPlayable[hash]
+            : this.models.treesWall[hash];
+          if (!baseModel) continue;
+          const mesh = baseModel.clone();
+          mesh.scale.setScalar(scale);
+          mesh.position.set(x + 0.5, LANE_Y[LaneType.GRASS], rowAbs);
+          mesh.traverse(c => { if (c.isMesh) { c.castShadow = c.receiveShadow = true; } });
+          this.obstacleGroup.add(mesh);
+        }
+
+      } else if (lane.laneType === LaneType.LILY) {
+        const baseModel = this.models[LaneType.LILY];
+        if (!baseModel) continue;
+        const t = performance.now() / 1000;
+        for (const [pos] of lane.iterObstacles()) {
+          if (pos < PLAYABLE_MIN - 1 || pos > PLAYABLE_MAX + 1) continue;
+          const x = Math.floor(pos);
+          const phase = ((rowAbs * 31 + x) * 2.399963) % (Math.PI * 2);
+          const mesh = baseModel.clone();
+          mesh.scale.setScalar(scale);
           mesh.rotation.y = phase + t * 0.25;
+          mesh.position.set(x + 0.5, LANE_Y[LaneType.LILY], rowAbs);
+          mesh.traverse(c => { if (c.isMesh) { c.castShadow = c.receiveShadow = true; } });
+          this.obstacleGroup.add(mesh);
         }
-
-        // Position centrée sur la case/obstacle
-        const cx = pos + width / 2;
-        mesh.position.set(cx, LANE_Y[lane.laneType] ?? 0, rowAbs);
-
-        mesh.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-        this.obstacleGroup.add(mesh);
       }
     }
 
