@@ -20,9 +20,9 @@ const OBS_PLAYABLE_W  = PLAYABLE_MAX - PLAYABLE_MIN + 1;         // 9
 const OBS_SIZE        = OBS_LANES * (OBS_PLAYABLE_W + 2) + 2;   // 57
 const LANE_FEAT       = OBS_PLAYABLE_W + 2;                      // 11
 const LANE_EMBED_DIM  = 32;
-// GRID_H utilisé à l'entraînement (Python crossy_env.py) — ne pas confondre
-// avec le GRID_H de la version web (20 lignes visuelles).
-const PYTHON_GRID_H   = 13;
+// Constantes issues de crossy_env.py — ne PAS utiliser les constantes du jeu web.
+const PYTHON_GRID_H      = 13;   // GRID_H Python (vs 20 en web)
+const PYTHON_LOOK_BEHIND = 2;    // LOOK_BEHIND Python (vs 5 en web) : max delta player/camera
 
 // ── Réseau chargé (null jusqu'à loadAgent) ────────────────────────────────────
 let _net = null;
@@ -121,7 +121,11 @@ function _buildObs(env) {
     for (let x = PLAYABLE_MIN; x <= PLAYABLE_MAX; x++) obs[i++] = lane.obstacleAt(x);
   }
   obs[i++] = (env.playerX - PLAYABLE_MIN) / OBS_PLAYABLE_W;
-  obs[i]   = (env.playerRow - env.cameraStartRow) / PYTHON_GRID_H;
+  // Plafonner le delta à PYTHON_LOOK_BEHIND=2 : en Python camera_start_row
+  // est toujours à max 2 rangs derrière le joueur (LOOK_BEHIND=2), alors que
+  // le jeu web utilise LOOK_BEHIND=5. Sans ce cap, le modèle reçoit des
+  // valeurs hors distribution (~0.38 vs ~0.15 max vu à l'entraînement).
+  obs[i]   = Math.min(env.playerRow - env.cameraStartRow, PYTHON_LOOK_BEHIND) / PYTHON_GRID_H;
   return obs;
 }
 

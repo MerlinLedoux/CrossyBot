@@ -6,7 +6,7 @@ import { LaneType }     from './game/lane.js';
 import { PLAYABLE_MIN, PLAYABLE_MAX, CELLS_PER_SEC, MAX_SPEED, GRID_W } from './game/constants.js';
 import { loadAgent, getAction } from './ai/agent.js';
 
-const KEY_TO_ACTION = { ArrowUp: 1, ArrowDown: 2, ArrowLeft: 3, ArrowRight: 4 };
+const KEY_TO_ACTION = { ArrowUp: 1, ArrowDown: 2, ArrowLeft: 4, ArrowRight: 3 };
 
 const SCROLL_SPEED = 0.5; // rangées par seconde
 
@@ -29,7 +29,7 @@ async function main() {
   let aiMode  = false;
   let aiTimer = 0;
   const AI_INTERVAL = 1 / 3;   // 3 actions/sec, identique à l'entraînement
-  const ACTION_ROT  = { 1: Math.PI / 2, 2: -Math.PI / 2, 3: Math.PI, 4: 0 };
+  const ACTION_ROT  = { 1: Math.PI / 2, 2: -Math.PI / 2, 3: 0, 4: Math.PI };
 
   loadAgent('/crossybot.json').then(() => {
     aiBtnEl.disabled    = false;
@@ -87,7 +87,7 @@ async function main() {
     env._ensureLanes();
     scoreEl.textContent = env.score;
 
-    const ROT = { 1: Math.PI / 2, 2: -Math.PI / 2, 3: Math.PI, 4: 0 };
+    const ROT = { 1: Math.PI / 2, 2: -Math.PI / 2, 3: 0, 4: Math.PI };
     if (ROT[action] !== undefined) view.setPlayerRotation(ROT[action]);
 
     if (checkCollision()) triggerGameOver();

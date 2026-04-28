@@ -2,7 +2,7 @@ import { Lane, LaneType } from './lane.js';
 import { GRID_W, PLAYABLE_MIN, PLAYABLE_MAX, GRID_H, LOOK_BEHIND, MIN_LANES, MAX_LANES } from './constants.js';
 import { CONFIG } from './generationConfig.js';
 
-const ACTION_DELTAS = { 0: [0, 0], 1: [0, 1], 2: [0, -1], 3: [1, 0], 4: [-1, 0] };
+const ACTION_DELTAS = { 0: [0, 0], 1: [0, 1], 2: [0, -1], 3: [-1, 0], 4: [1, 0] };
 
 const BLOCKING_ROWS = 3;   // lignes d'herbe bloquantes au départ
 const TRIM_BUFFER   = 3;   // rows conservés derrière cameraStartRow pour éviter le pop-in
