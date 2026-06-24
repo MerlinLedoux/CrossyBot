@@ -46,6 +46,8 @@ export class Lane {
       }
     } 
     else if (laneType === LaneType.WATER || laneType === LaneType.ROAD) {
+      // Pour les routes : taille fixée une fois pour toute la ligne
+      if (laneType === LaneType.ROAD) this._fixedCarWidth = CONFIG.car_size.sample(score);
       this._generateStream();
     }
   }
@@ -56,7 +58,7 @@ export class Lane {
 
   // ── génération du flux ────────────────────────────────────────────────────
   _sampleGap()   { return this.laneType === LaneType.WATER ? CONFIG.log_space.sample(this._score) : CONFIG.car_space.sample(this._score); }
-  _sampleWidth() { return this.laneType === LaneType.WATER ? CONFIG.log_size.sample(this._score)  : CONFIG.car_size.sample(this._score); }
+  _sampleWidth() { return this.laneType === LaneType.WATER ? CONFIG.log_size.sample(this._score)  : this._fixedCarWidth; }
 
   _generateStream() {
     let x = -GRID_W + this._sampleGap();

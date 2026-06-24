@@ -1,7 +1,7 @@
 """
 rollout.py — Buffer de collecte des expériences pour PPO.
 
-Stocke N steps × M envs d'expériences, puis calcule les avantages
+Stocke N steps * M envs d'expériences, puis calcule les avantages
 via GAE (Generalized Advantage Estimation, Schulman 2015).
 
 GAE :
@@ -37,8 +37,7 @@ class RolloutBuffer:
 
         self._init_storage()
 
-    # --- initialisation ------------------------------------------------------
-
+    # initialisation 
     def _init_storage(self) -> None:
         T, E, D = self.n_steps, self.n_envs, self.obs_dim
         self.obs       = torch.zeros(T, E, D)
@@ -53,8 +52,7 @@ class RolloutBuffer:
     def reset(self) -> None:
         self._init_storage()
 
-    # --- insertion -----------------------------------------------------------
-
+    # insertion 
     def add(
         self,
         obs:      torch.Tensor,   # (n_envs, obs_dim)
@@ -75,8 +73,7 @@ class RolloutBuffer:
         if self.ptr == self.n_steps:
             self.full = True
 
-    # --- calcul GAE ----------------------------------------------------------
-
+    # calcul GAE 
     def compute_returns(self, last_values: torch.Tensor) -> None:
         """
         Calcule les avantages GAE et les returns cibles pour la value function.
@@ -107,8 +104,7 @@ class RolloutBuffer:
         self.advantages = advantages
         self.returns    = advantages + self.values   # cibles pour la value head
 
-    # --- itération mini-batchs -----------------------------------------------
-
+    # itération mini-batchs 
     def get_batches(self, batch_size: int):
         """
         Génère des mini-batchs aléatoires à partir des données collectées.

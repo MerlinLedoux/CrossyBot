@@ -82,7 +82,7 @@ class WorldConfig:
 
     # Taille des sections d'herbe
     grass_lines: Table = field(default_factory=lambda: Table(
-        (0, None, {1: 40, 2: 30, 3: 20, 4: 10}),
+        (0, None, {1: 40, 2: 40, 3: 15, 4: 5}),
     ))
 
     # Taille des sections de route et d'eau
@@ -131,7 +131,7 @@ class WorldConfig:
     # RIVIÈRE — composition de chaque ligne
     # Probabilité qu'une ligne de rivière soit des BÛCHES (sinon nénuphars)
     water_prob: Prob = field(default_factory=lambda: Prob(
-        (  0, None, 0.90),
+        (0, None, 0.90),
     ))
 
     # ==================================================================================================================================================

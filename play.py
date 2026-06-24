@@ -14,7 +14,7 @@ import argparse
 import torch
 import numpy as np
 import arcade
-from training.env.crossy_env import CrossyEnv, GRID_H
+from training.env.crossy_env import CrossyEnv, GRID_H, OBS_LANES, OBS_PLAYABLE_W, SCROLL_SPEED
 from training.env.lane import (LaneType, GRID_W, MAX_SPEED, CELLS_PER_SEC,
                                 PLAYABLE_MIN, PLAYABLE_MAX)
 from training.agent.network import ActorCritic
@@ -91,11 +91,12 @@ class CrossyGame(arcade.Window):
 
     def _reset(self):
         obs, _ = self.env.reset()
-        self._obs   = obs
-        self._dead  = False
+        self._obs        = obs
+        self._dead       = False
         self._agent_timer = 0.0
         self._last_action_label = "·"
-        self._paused = self.debug
+        self._paused     = self.debug
+        self._scroll_row = -3.0
 
     # ── boucle temps réel ────────────────────────────────────────────────────
 
@@ -125,7 +126,16 @@ class CrossyGame(arcade.Window):
                 self._agent_timer -= AGENT_ACTION_INTERVAL
                 self._agent_step()
 
+        self._scroll_row = max(self._scroll_row, float(self.env.camera_start_row))
+        self._scroll_row += SCROLL_SPEED * dt
+        new_cam = int(self._scroll_row)
+        if new_cam > self.env.camera_start_row:
+            self.env.camera_start_row = new_cam
+
         self._check_collision()
+        if not self._dead and self.env.player_row < self.env.camera_start_row:
+            self._dead = True
+
         self.env._trim_lanes()
         self.env._ensure_lanes()
 
@@ -284,78 +294,73 @@ class CrossyGame(arcade.Window):
                          px, top - 28, (130, 130, 130), DBG_FONT)
 
         # ── header colonnes ───────────────────────────────────────────────
+        # L'observation contient seulement les 9 colonnes jouables (c2..c10)
         header_y = top - 46
-        # Décalages fixes pour aligner les colonnes
         X_IDX   = px
-        X_TYPE  = px + 30    # valeur type  (1 float)
-        X_SPD   = px + 78    # valeur speed (1 float)
-        X_SEP   = px + 126   # séparateur |
-        X_OCC   = px + 136   # début des 13 valeurs d'occupation
-        OCC_W   = 39         # largeur par colonne d'occupation
+        X_TYPE  = px + 30
+        X_SPD   = px + 78
+        X_SEP   = px + 126
+        X_OCC   = px + 136   # début des 9 valeurs d'occupation
+        OCC_W   = 46         # largeur par colonne (plus large car moins de colonnes)
 
         arcade.draw_text("idx", X_IDX,  header_y, (150, 150, 150), DBG_FONT)
         arcade.draw_text("type", X_TYPE, header_y, (150, 150, 150), DBG_FONT)
         arcade.draw_text("speed", X_SPD, header_y, (150, 150, 150), DBG_FONT)
-        for c in range(GRID_W):
-            col_color = (200, 200, 80) if PLAYABLE_MIN <= c <= PLAYABLE_MAX \
-                        else (100, 100, 100)
-            arcade.draw_text(f"c{c}", X_OCC + c * OCC_W, header_y,
-                             col_color, DBG_FONT)
+        for ci, c in enumerate(range(PLAYABLE_MIN, PLAYABLE_MAX + 1)):
+            arcade.draw_text(f"c{c}", X_OCC + ci * OCC_W, header_y,
+                             (200, 200, 80), DBG_FONT)
 
         arcade.draw_line(px, header_y - 2, WIN_W + DBG_W - DBG_MARGIN,
                          header_y - 2, (60, 60, 60), 1)
 
-        # ── une ligne par lane ────────────────────────────────────────────
-        for i in range(GRID_H):
-            base  = i * 15          # index de départ dans obs pour cette lane
+        # ── une ligne par lane observée (OBS_LANES = 5) ───────────────────
+        # obs[i * 11 : i * 11 + 11] = [type, speed, occ_c2..occ_c10]
+        obs_lane_feat = OBS_PLAYABLE_W + 2   # = 11
+        for i in range(OBS_LANES):
+            base   = i * obs_lane_feat
             v_type = float(obs[base])
             v_spd  = float(obs[base + 1])
-            v_occ  = [float(obs[base + 2 + c]) for c in range(GRID_W)]
+            v_occ  = [float(obs[base + 2 + ci]) for ci in range(OBS_PLAYABLE_W)]
 
-            row_y = header_y - 14 - i * DBG_ROW_H
+            row_y  = header_y - 14 - i * DBG_ROW_H
 
-            # Fond sur la lane du joueur
-            if i == p_vis:
+            # La lane du joueur est toujours à l'index OBS_LOOK_BEHIND = 1
+            is_player_lane = (i == 1)
+            if is_player_lane:
                 arcade.draw_rect_filled(
                     arcade.XYWH(WIN_W + DBG_W / 2, row_y + DBG_ROW_H / 2 - 2,
                                 DBG_W, DBG_ROW_H),
                     (60, 55, 15),
                 )
 
-            rel     = i - p_vis
+            rel     = i - 1   # 1 = index du joueur dans la fenêtre obs
             idx_str = f"{rel:+d}" if rel != 0 else " 0"
-            row_col = (255, 230, 80) if i == p_vis else (170, 170, 170)
+            row_col = (255, 230, 80) if is_player_lane else (170, 170, 170)
 
-            # index
             arcade.draw_text(f"[{idx_str}]", X_IDX, row_y, row_col, DBG_FONT)
-
-            # type (valeur brute : -1.0 / -0.5 / 0.0 / 0.5 / 1.0)
             arcade.draw_text(f"{v_type:+.2f}", X_TYPE, row_y,
                              (180, 220, 255), DBG_FONT)
 
-            # speed (valeur brute : -1.0 à +1.0)
             spd_col = (100, 220, 100) if v_spd > 0 else \
                       (220, 100, 100) if v_spd < 0 else (150, 150, 150)
             arcade.draw_text(f"{v_spd:+.2f}", X_SPD, row_y, spd_col, DBG_FONT)
-
             arcade.draw_text("|", X_SEP, row_y, (80, 80, 80), DBG_FONT)
 
-            # occ[0..12] — valeurs brutes
-            for c in range(GRID_W):
-                val = v_occ[c]
-                # Blanc si 0.00, jaune si > 0
+            # occ[c2..c10] — 9 valeurs brutes
+            player_col_idx = int(self.env.player_x) - PLAYABLE_MIN
+            for ci in range(OBS_PLAYABLE_W):
+                val = v_occ[ci]
                 if val == 0.0:
                     txt_col = (80, 80, 80)
-                elif c == int(self.env.player_x):
-                    txt_col = (80, 255, 80)   # vert = colonne du joueur
+                elif ci == player_col_idx:
+                    txt_col = (80, 255, 80)
                 else:
                     txt_col = (255, 200, 80)
-
-                arcade.draw_text(f"{val:.2f}", X_OCC + c * OCC_W, row_y,
+                arcade.draw_text(f"{val:.2f}", X_OCC + ci * OCC_W, row_y,
                                  txt_col, DBG_FONT)
 
         # ── séparateur ────────────────────────────────────────────────────
-        sep_y = header_y - 14 - GRID_H * DBG_ROW_H - 4
+        sep_y = header_y - 14 - OBS_LANES * DBG_ROW_H - 4
         arcade.draw_line(px, sep_y, WIN_W + DBG_W - DBG_MARGIN,
                          sep_y, (60, 60, 60), 1)
 
@@ -377,6 +382,47 @@ class CrossyGame(arcade.Window):
             f"   action={self._last_action_label}",
             px, sep_y - 46, (200, 200, 120), DBG_FONT,
         )
+
+        # ── probabilités d'action (si réseau chargé) ──────────────────────
+        if self.network is not None:
+            obs_t = torch.tensor(self._obs, dtype=torch.float32).unsqueeze(0)
+            with torch.no_grad():
+                logits = self.network.policy_head(
+                    self.network._encode(obs_t)
+                )                               # (1, 5)
+            probs = torch.softmax(logits, dim=-1).squeeze(0)  # (5,)
+
+            # Étiquettes et couleurs
+            action_labels = ["·", "↑", "↓", "←", "→"]
+            prob_y = sep_y - 66
+            arcade.draw_text("Probabilités d'action :", px, prob_y,
+                             (150, 150, 150), DBG_FONT)
+
+            prob_y -= 16
+            x_cursor = px
+            for act_i, (label, p) in enumerate(zip(action_labels, probs.tolist())):
+                # Barre de fond gris
+                bar_max_w = 90
+                bar_w = max(1, int(p * bar_max_w))
+                bar_h = 13
+                bar_x = x_cursor + bar_max_w / 2
+                arcade.draw_rect_filled(
+                    arcade.XYWH(bar_x, prob_y + bar_h / 2, bar_max_w, bar_h),
+                    (40, 40, 40),
+                )
+                # Barre de remplissage — bleu si action la plus probable
+                max_p = max(probs.tolist())
+                fill_col = (80, 200, 80) if p == max_p else (80, 120, 200)
+                arcade.draw_rect_filled(
+                    arcade.XYWH(x_cursor + bar_w / 2, prob_y + bar_h / 2,
+                                bar_w, bar_h),
+                    fill_col,
+                )
+                # Texte : étiquette + pourcentage
+                txt_col = (255, 255, 100) if p == max_p else (200, 200, 200)
+                arcade.draw_text(f"{label} {p*100:4.1f}%",
+                                 x_cursor + 2, prob_y + 1, txt_col, DBG_FONT)
+                x_cursor += bar_max_w + 8
 
     # ── helpers de dessin (jeu) ───────────────────────────────────────────────
 

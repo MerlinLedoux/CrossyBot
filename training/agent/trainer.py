@@ -188,59 +188,63 @@ class Trainer:
             # Tu peux cliquer dessus pour ouvrir directement la page WandB.
             print(f"Dashboard WandB : {wandb.run.url}\n")
 
-        for update in range(1, total_updates + 1):
-            t_start = time.time()
+        try:
+            for update in range(1, total_updates + 1):
+                t_start = time.time()
 
-            # ----------------------------------------------------------------
-            # 1. COLLECTE
-            # ----------------------------------------------------------------
-            self.buffer.reset()
+                # ------------------------------------------------------------
+                # 1. COLLECTE
+                # ------------------------------------------------------------
+                self.buffer.reset()
 
-            for _ in range(self.n_steps):
-                action, log_prob, value = self.network.act(obs)
+                for _ in range(self.n_steps):
+                    action, log_prob, value = self.network.act(obs)
 
-                obs_np, reward_np, terminated_np, truncated_np, infos = \
-                    self.envs.step(action.numpy())
+                    obs_np, reward_np, terminated_np, truncated_np, infos = \
+                        self.envs.step(action.numpy())
 
-                done_np = terminated_np | truncated_np
-                reward  = torch.tensor(reward_np, dtype=torch.float32)
-                done    = torch.tensor(done_np,   dtype=torch.float32)
+                    done_np = terminated_np | truncated_np
+                    reward  = torch.tensor(reward_np, dtype=torch.float32)
+                    done    = torch.tensor(done_np,   dtype=torch.float32)
 
-                self.buffer.add(obs, action, log_prob, reward, done, value)
+                    self.buffer.add(obs, action, log_prob, reward, done, value)
 
-                ep_rewards += reward_np
-                for i, d in enumerate(done_np):
-                    if d:
-                        self.episode_rewards.append(float(ep_rewards[i]))
-                        ep_rewards[i] = 0.0
+                    ep_rewards += reward_np
+                    for i, d in enumerate(done_np):
+                        if d:
+                            self.episode_rewards.append(float(ep_rewards[i]))
+                            ep_rewards[i] = 0.0
 
-                obs = torch.tensor(obs_np, dtype=torch.float32)
-                self.total_steps += self.n_envs
+                    obs = torch.tensor(obs_np, dtype=torch.float32)
+                    self.total_steps += self.n_envs
 
-            # ----------------------------------------------------------------
-            # 2. GAE
-            # ----------------------------------------------------------------
-            with torch.no_grad():
-                _, _, last_values = self.network.act(obs)
-            self.buffer.compute_returns(last_values)
+                # ------------------------------------------------------------
+                # 2. GAE
+                # ------------------------------------------------------------
+                with torch.no_grad():
+                    _, _, last_values = self.network.act(obs)
+                self.buffer.compute_returns(last_values)
 
-            # ----------------------------------------------------------------
-            # 3. MISE À JOUR PPO
-            # ----------------------------------------------------------------
-            metrics = self.ppo.update(self.buffer)
-            self.update_count += 1
+                # ------------------------------------------------------------
+                # 3. MISE À JOUR PPO
+                # ------------------------------------------------------------
+                metrics = self.ppo.update(self.buffer)
+                self.update_count += 1
 
-            # ----------------------------------------------------------------
-            # 4. LOGGING
-            # ----------------------------------------------------------------
-            if update % self.log_every == 0:
-                self._log(update, total_updates, metrics, t_start)
+                # ------------------------------------------------------------
+                # 4. LOGGING
+                # ------------------------------------------------------------
+                if update % self.log_every == 0:
+                    self._log(update, total_updates, metrics, t_start)
 
-            if update % self.save_every == 0:
-                self.save(self.save_path)
+                if update % self.save_every == 0:
+                    self.save(self.save_path)
+
+        except KeyboardInterrupt:
+            print(f"\nEntraînement interrompu (Ctrl+C) à l'update {self.update_count}.")
 
         self.save(self.save_path)
-        print(f"\nEntraînement terminé. Modèle sauvegardé → {self.save_path}")
+        print(f"Modèle sauvegardé → {self.save_path}")
 
         # ── wandb.finish() ────────────────────────────────────────────
         # Termine proprement la run WandB.

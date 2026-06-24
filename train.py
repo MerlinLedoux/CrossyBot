@@ -17,6 +17,7 @@ def parse_args():
     p.add_argument("--lr",         type=float, default=3e-4,  help="Learning rate")
     p.add_argument("--epochs",     type=int,   default=4,     help="Epochs PPO par update")
     p.add_argument("--batch",      type=int,   default=256,   help="Taille des mini-batchs")
+    p.add_argument("--ent-coef",   type=float, default=0.05,  help="Coefficient d'entropie (exploration)")
     p.add_argument("--load",       type=str,   default=None,  help="Chemin d'un checkpoint à charger")
     p.add_argument("--save",       type=str,   default="training/models/crossybot.pt")
     p.add_argument("--no-wandb",   action="store_true",      help="Désactive WandB")
@@ -33,6 +34,7 @@ def main():
         n_epochs       = args.epochs,
         batch_size     = args.batch,
         lr             = args.lr,
+        ent_coef       = args.ent_coef,
         save_path      = args.save,
         use_wandb      = not args.no_wandb,
         wandb_run_name = args.run_name,

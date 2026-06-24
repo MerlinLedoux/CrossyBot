@@ -3,7 +3,6 @@ network.py — Architecture ActorCritic pour CrossyBot.
 
 Structure :
   - LaneEncoder  : MLP partagé appliqué indépendamment à chaque lane
-  - SpatialConv  : Conv1D pour capturer les relations entre lanes consécutives
   - Tronc commun : MLP partagé Actor/Critic
   - PolicyHead   : logits → distribution Categorical
   - ValueHead    : scalaire V(s)
@@ -13,11 +12,11 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 
-# Dimensions issues de l'environnement
-N_LANES      = 13   # GRID_H
-LANE_FEAT    = 15   # type + speed + 13 valeurs d'obstacle (GRID_W)
+# Dimensions issues de l'environnement (doit correspondre à crossy_env.py)
+N_LANES      = 5    # OBS_LANES  : 1 derrière + joueur + 3 devant
+LANE_FEAT    = 11   # type + speed + 9 colonnes jouables (OBS_PLAYABLE_W)
 PLAYER_FEAT  = 2    # player_x normalisé, position verticale normalisée
-OBS_SIZE     = N_LANES * LANE_FEAT + PLAYER_FEAT   # 197
+OBS_SIZE     = N_LANES * LANE_FEAT + PLAYER_FEAT   # 5*11+2 = 57
 N_ACTIONS    = 5
 
 
@@ -55,45 +54,10 @@ class LaneEncoder(nn.Module):
         return out.reshape(batch, n_lanes, -1)               # (batch, N, embed)
 
 
-class SpatialConv(nn.Module):
-    """
-    Conv1D sur la dimension des lanes pour capturer les groupes consécutifs
-    (ex : rivière multi-lignes, groupe de routes).
-    Entrée  : (batch, embed_dim, N_LANES)
-    Sortie  : (batch, conv_dim * N_LANES)  — flatten conserve la position
-    """
-
-    def __init__(self, in_channels: int = 32, out_channels: int = 64):
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
-        self.out_dim = out_channels * N_LANES
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x : (batch, in_channels, N_LANES)
-        out = self.conv(x)          # (batch, out_channels, N_LANES)
-        return out.flatten(1)       # (batch, out_channels * N_LANES)
-
 
 class ActorCritic(nn.Module):
-    """
-    Réseau Actor-Critic complet pour PPO.
 
-    Flux :
-      obs (197,)
-        ├─ lanes (13, 15) → LaneEncoder → SpatialConv → trunk_in (832,)
-        └─ player_pos (2,)
-              └─ concat → (834,) → tronc partagé (256 → 128)
-                    ├─ policy_head → logits (5,)
-                    └─ value_head  → V(s)  (1,)
-    """
-
-    LANE_EMBED  = 32
-    CONV_CH     = 64
+    LANE_EMBED   = 32
     TRUNK_HIDDEN = 256
     TRUNK_OUT    = 128
 
@@ -101,10 +65,8 @@ class ActorCritic(nn.Module):
         super().__init__()
 
         self.lane_encoder = LaneEncoder(LANE_FEAT, self.LANE_EMBED)
-        self.spatial_conv  = SpatialConv(self.LANE_EMBED, self.CONV_CH)
 
-        conv_flat = self.CONV_CH * N_LANES          # 64 * 13 = 832
-        trunk_in  = conv_flat + PLAYER_FEAT         # 832 + 2 = 834
+        trunk_in = self.LANE_EMBED * N_LANES + PLAYER_FEAT   # 32*5 + 2 = 162
 
         self.trunk = nn.Sequential(
             _orthogonal(nn.Linear(trunk_in, self.TRUNK_HIDDEN)),
@@ -113,21 +75,19 @@ class ActorCritic(nn.Module):
             nn.ReLU(),
         )
 
-        # Têtes avec gains réduits (logits proches de 0 au départ = exploration uniforme)
         self.policy_head = _orthogonal(nn.Linear(self.TRUNK_OUT, N_ACTIONS), gain=0.01)
         self.value_head  = _orthogonal(nn.Linear(self.TRUNK_OUT, 1),         gain=1.0)
 
     def _encode(self, obs: torch.Tensor) -> torch.Tensor:
-        """Extrait les features partagées depuis l'observation brute."""
-        lanes_flat  = obs[:, :N_LANES * LANE_FEAT]                        # (B, 195)
-        player_pos  = obs[:, N_LANES * LANE_FEAT:]                        # (B, 2)
+        lanes_flat = obs[:, :N_LANES * LANE_FEAT]          # (B, 55)
+        player_pos = obs[:, N_LANES * LANE_FEAT:]          # (B, 2)
 
-        lanes       = lanes_flat.view(-1, N_LANES, LANE_FEAT)             # (B, 13, 15)
-        lane_embed  = self.lane_encoder(lanes)                             # (B, 13, 32)
-        spatial     = self.spatial_conv(lane_embed.permute(0, 2, 1))      # (B, 832)
+        lanes      = lanes_flat.reshape(-1, N_LANES, LANE_FEAT)   # (B, 5, 11)
+        lane_embed = self.lane_encoder(lanes)                      # (B, 5, 32)
+        flat       = lane_embed.reshape(lane_embed.size(0), -1)    # (B, 160)
 
-        x = torch.cat([spatial, player_pos], dim=1)                       # (B, 834)
-        return self.trunk(x)                                               # (B, 128)
+        x = torch.cat([flat, player_pos], dim=1)                   # (B, 162)
+        return self.trunk(x)                                        # (B, 128)
 
     def forward(self, obs: torch.Tensor):
         """Retourne (distribution, valeur) — utilisé à l'entraînement."""

@@ -1,6 +1,4 @@
 """
-ppo.py — Mise à jour PPO (Proximal Policy Optimization, Schulman 2017).
-
 Loss totale :
     L = L_policy + c1 * L_value - c2 * L_entropy
 
@@ -20,14 +18,15 @@ class PPO:
 
     def __init__(
         self,
-        network:        ActorCritic,
-        lr:             float = 3e-4,
-        n_epochs:       int   = 4,
-        batch_size:     int   = 256,
-        clip_range:     float = 0.2,
-        vf_coef:        float = 0.5,
-        ent_coef:       float = 0.01,
-        max_grad_norm:  float = 0.5,
+        network:        ActorCritic,    # Architecture utiliser pour prendre une décision en fonction des observation.
+        lr:             float = 3e-4,   # Learning rate agit sur les poids du réseaux pour qu'on ne face pas de changement trop brusque.
+        n_epochs:       int   = 4,      # Nombre de fois ou l'on passe sur la même donner collecter pour mettre ajour le réseau.
+        batch_size:     int   = 256,    # Taille d'un batch pour la mise a jour des poids.
+        clip_range:     float = 0.2,    # Définie la varariation maximal pour la polique permet de lisser l'apprentissage. Même role que le lr mais a un autre niveau.
+        vf_coef:        float = 0.5,    # Value fonction coefficient est le poids de la loss du critic dans la loss totale
+        ent_coef:       float = 0.01,   # Définie a qu'elle point on encourage l'exploration
+        max_grad_norm:  float = 0.5,    # contrôle la direction du pas Il ne touche pas au learning rate. Il regarde la norme globale du vecteur gradient, et si elle est trop grande, il redimensionne le vecteur entier pour que sa longueur fasse exactement 0.5 — sans changer sa direction.
+
     ):
         self.network       = network
         self.n_epochs      = n_epochs
@@ -39,19 +38,17 @@ class PPO:
 
         self.optimizer = torch.optim.Adam(network.parameters(), lr=lr, eps=1e-5)
 
-    # --- mise à jour ---------------------------------------------------------
-
     def update(self, buffer: RolloutBuffer) -> dict:
         """
         Effectue n_epochs passes sur le buffer.
         Retourne un dictionnaire de métriques pour le logging.
         """
         metrics = {
-            "loss_policy":  [],
-            "loss_value":   [],
-            "loss_entropy": [],
-            "loss_total":   [],
-            "clip_frac":    [],   # fraction de ratios clippés (santé du clipping)
+            "loss_policy":  [], # 
+            "loss_value":   [], # 
+            "loss_entropy": [], # 
+            "loss_total":   [], # 
+            "clip_frac":    [], # fraction de ratios clippés
         }
 
         for _ in range(self.n_epochs):
