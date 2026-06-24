@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Checkpoints intermédiaires (garder uniquement crossybot.pt)
+training/models/crossybot_*.pt
+
+# WandB logs
+wandb/
+
+# Node
+web/node_modules/
+web/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
