@@ -36,14 +36,11 @@
 
 ### Version Web 3D (Three.js)
 
-Le même modèle est exporté en JSON et tourne en **inférence JS pure** dans le navigateur — aucune dépendance IA côté client.
+<p align="center">
+  <img src="docs/Animation.gif" alt="Version web 3D avec mode IA" width="800"/>
+</p>
 
-```bash
-cd web && npm install && npm run dev
-```
-
-<!-- 📹 Pour ajouter un GIF de la version web : enregistrer avec ScreenToGif, sauvegarder dans docs/demo_web.gif, et décommenter la ligne ci-dessous -->
-<!-- <p align="center"><img src="docs/demo_web.gif" alt="Version web 3D" width="800"/></p> -->
+> Le même modèle est exporté en JSON et tourne en **inférence JS pure** dans le navigateur — aucune dépendance IA côté client, < 1 ms par décision.
 
 ---
 
@@ -165,20 +162,20 @@ Vecteur de **57 floats** passé au réseau à chaque step :
                           obs (57,)
                              │
                ┌─────────────┴─────────────┐
-               │                             │
+               │                           │
         lanes (5, 11)                   player_pos (2,)
-               │                             │
-    ┌──── LaneEncoder ────┐                  │
-    │  (partagé × 5 lanes) │                  │
-    │  Linear(11 → 64)     │                  │
-    │  ReLU                │                  │
-    │  Linear(64 → 32)     │                  │
-    │  ReLU                │                  │
-    └──────────────────────┘                  │
-               │                             │
-        flatten (160,)                        │
-               │                             │
-               └──────── concat ─────────────┘
+               │                           │
+    ┌──── LaneEncoder ─────┐               │
+    │  (partagé × 5 lanes) │               │
+    │  Linear(11 → 64)     │               │
+    │  ReLU                │               │
+    │  Linear(64 → 32)     │               │
+    │  ReLU                │               │
+    └──────────────────────┘               │
+               │                           │
+        flatten (160,)                     │
+               │                           │
+               └──────── concat ───────────┘
                            │
                         (162,)
                            │
@@ -188,10 +185,10 @@ Vecteur de **57 floats** passé au réseau à chaque step :
                          ReLU
                            │
               ┌────────────┴────────────┐
-              │                          │
+              │                         │
        Policy Head                 Value Head
     Linear(128 → 5)             Linear(128 → 1)
-              │                          │
+              │                         │
      logits → Categorical           V(s) scalaire
 ```
 
@@ -252,13 +249,13 @@ Chaque table est définie par tranches de score, ce qui permet un contrôle fin 
 ## Pipeline Python → Web
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐
+┌──────────────┐     ┌───────────────┐     ┌──────────────────────────┐
 │  train.py    │     │export_model.py│     │  web/src/ai/agent.js     │
-│              │     │              │     │                          │
-│  PyTorch     │────▶│  Sérialise   │────▶│  Reconstruit le réseau   │
-│  .pt (dict)  │     │  en JSON     │     │  en JS pur (Float32Array)│
-│              │     │              │     │  < 1 ms par inférence    │
-└──────────────┘     └──────────────┘     └──────────────────────────┘
+│              │     │               │     │                          │
+│  PyTorch     │────>│  Sérialise    │────>│  Reconstruit le réseau   │
+│  .pt (dict)  │     │  en JSON      │     │  en JS pur (Float32Array)│
+│              │     │               │     │  < 1 ms par inférence    │
+└──────────────┘     └───────────────┘     └──────────────────────────┘
 ```
 
 Les poids sont aplatis en row-major (layout natif PyTorch) et rechargés dans des `Float32Array`. L'inférence reconstruit manuellement les couches `Linear` + `ReLU` — aucune dépendance à TensorFlow.js ou ONNX.js.
